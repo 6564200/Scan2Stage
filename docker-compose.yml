@@ -1,0 +1,7 @@
+services:
+  scan2stage:
+    build: .
+    volumes:
+      - ./data:/data:ro
+      - ./outputs:/outputs
+    command: ["/data/input.ply", "--output", "/outputs/processed.ply", "--stats", "/outputs/stats.json"]
