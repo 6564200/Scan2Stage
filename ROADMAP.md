@@ -1,5 +1,9 @@
 # Scan2Stage roadmap
 
+> The milestone list below describes product direction. The audited, ordered
+> engineering backlog—with risks and acceptance criteria—is maintained in
+> [`docs/ENGINEERING_PLAN.md`](docs/ENGINEERING_PLAN.md).
+
 ## Pilot foundation — Colab/GCP + GitHub
 
 - GitHub is the source of truth.
