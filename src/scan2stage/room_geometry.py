@@ -2,29 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import math
 import numpy as np
-
-
-def convex_hull_2d(points: np.ndarray) -> np.ndarray:
-    pts = np.unique(np.asarray(points, dtype=float), axis=0)
-    if len(pts) <= 2:
-        return pts
-    pts = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
-
-    def cross(o, a, b):
-        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
-
-    lower = []
-    for p in pts:
-        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
-            lower.pop()
-        lower.append(p)
-    upper = []
-    for p in reversed(pts):
-        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-            upper.pop()
-        upper.append(p)
-    return np.asarray(lower[:-1] + upper[:-1], dtype=float)
 
 
 def _plane_z(model: np.ndarray) -> float:
@@ -35,7 +14,6 @@ def _plane_z(model: np.ndarray) -> float:
 
 
 def detect_floor(pcd, distance_threshold=0.025, ransac_n=3, num_iterations=1500):
-    import open3d as o3d
     pts = np.asarray(pcd.points)
     if len(pts) < 100:
         raise ValueError("Not enough points for floor detection")
@@ -51,34 +29,128 @@ def detect_floor(pcd, distance_threshold=0.025, ransac_n=3, num_iterations=1500)
         raise RuntimeError(f"Lowest dominant plane is not horizontal: normal={n.tolist()}")
     if n[2] < 0:
         model *= -1
-        n *= -1
-    floor_z = _plane_z(model)
-    return model, floor_z, len(inliers)
+    return model, _plane_z(model), len(inliers)
 
 
-def detect_walls(pcd, max_walls=12, distance_threshold=0.035, min_inliers=1500):
-    import open3d as o3d
+def detect_walls(pcd, max_walls=20, distance_threshold=0.035, min_inliers=1200):
     work = pcd
     walls = []
-    for _ in range(max_walls * 3):
+    for _ in range(max_walls * 4):
         if len(work.points) < min_inliers:
             break
         model, inliers = work.segment_plane(distance_threshold, 3, 1200)
         if len(inliers) < min_inliers:
             break
         m = np.asarray(model, dtype=float)
-        n = m[:3]
-        norm = np.linalg.norm(n)
+        norm = np.linalg.norm(m[:3])
         if norm == 0:
             break
         m /= norm
         n = m[:3]
-        if abs(n[2]) < 0.25:
+        if abs(n[2]) < 0.20:
             walls.append({"plane": m.tolist(), "normal": n.tolist(), "inliers": int(len(inliers))})
             if len(walls) >= max_walls:
                 break
         work = work.select_by_index(inliers, invert=True)
     return walls
+
+
+def _dominant_rect_axes(walls: list[dict]) -> tuple[np.ndarray, np.ndarray, float]:
+    if not walls:
+        return np.array([1.0, 0.0]), np.array([0.0, 1.0]), 0.0
+    angles = []
+    weights = []
+    for w in walls:
+        n = np.asarray(w["normal"][:2], dtype=float)
+        if np.linalg.norm(n) < 1e-8:
+            continue
+        n /= np.linalg.norm(n)
+        angles.append(math.atan2(n[1], n[0]))
+        weights.append(float(w["inliers"]))
+    a = np.asarray(angles)
+    w = np.asarray(weights)
+    phi = 0.25 * math.atan2(float(np.sum(w * np.sin(4 * a))), float(np.sum(w * np.cos(4 * a))))
+    u = np.array([math.cos(phi), math.sin(phi)])
+    v = np.array([-u[1], u[0]])
+    return u, v, math.degrees(phi)
+
+
+def _cluster_offsets(values, weights, tolerance=0.30):
+    order = np.argsort(values)
+    clusters = []
+    for i in order:
+        x = float(values[i]); wt = float(weights[i])
+        if not clusters or abs(x - clusters[-1]["center"]) > tolerance:
+            clusters.append({"center": x, "weight": wt, "members": 1})
+        else:
+            c = clusters[-1]
+            total = c["weight"] + wt
+            c["center"] = (c["center"] * c["weight"] + x * wt) / total
+            c["weight"] = total
+            c["members"] += 1
+    return clusters
+
+
+def _axis_boundaries(walls, axis, projections, trim=0.04):
+    offsets = []
+    weights = []
+    for w in walls:
+        plane = np.asarray(w["plane"], dtype=float)
+        nxy = plane[:2]
+        dot = float(np.dot(nxy, axis))
+        if abs(dot) < 0.80:
+            continue
+        offsets.append(float(-plane[3] / dot))
+        weights.append(float(w["inliers"]))
+    fallback = np.quantile(projections, [trim, 1.0 - trim]).astype(float)
+    if len(offsets) < 2:
+        return float(fallback[0]), float(fallback[1]), [], "trimmed_quantile"
+    clusters = _cluster_offsets(np.asarray(offsets), np.asarray(weights))
+    candidates = sorted(clusters, key=lambda c: c["weight"], reverse=True)[:6]
+    if len(candidates) < 2:
+        return float(fallback[0]), float(fallback[1]), clusters, "trimmed_quantile"
+    best = None
+    span_ref = max(0.5, float(fallback[1] - fallback[0]))
+    for i in range(len(candidates)):
+        for j in range(i + 1, len(candidates)):
+            a, b = sorted([candidates[i]["center"], candidates[j]["center"]])
+            sep = b - a
+            if sep < 0.25 * span_ref or sep > 1.35 * span_ref:
+                continue
+            score = candidates[i]["weight"] + candidates[j]["weight"]
+            if best is None or score > best[0]:
+                best = (score, a, b)
+    if best is None:
+        return float(fallback[0]), float(fallback[1]), clusters, "trimmed_quantile"
+    return float(best[1]), float(best[2]), clusters, "wall_support"
+
+
+def fit_rectangular_footprint(points_xy: np.ndarray, walls: list[dict], trim=0.04):
+    u, v, angle_deg = _dominant_rect_axes(walls)
+    pu = points_xy @ u
+    pv = points_xy @ v
+    u0, u1, uc, um = _axis_boundaries(walls, u, pu, trim)
+    v0, v1, vc, vm = _axis_boundaries(walls, v, pv, trim)
+    corners_local = np.array([[u0, v0], [u1, v0], [u1, v1], [u0, v1]], dtype=float)
+    basis = np.column_stack([u, v])
+    corners_xy = corners_local @ basis.T
+    inside = (pu >= u0) & (pu <= u1) & (pv >= v0) & (pv <= v1)
+    return {
+        "corners_xy_m": corners_xy.tolist(),
+        "width_m": float(u1 - u0),
+        "length_m": float(v1 - v0),
+        "orientation_deg": float(angle_deg),
+        "axis_u": u.tolist(),
+        "axis_v": v.tolist(),
+        "u_bounds": [u0, u1],
+        "v_bounds": [v0, v1],
+        "u_method": um,
+        "v_method": vm,
+        "u_wall_clusters": uc,
+        "v_wall_clusters": vc,
+        "inside_fraction": float(np.mean(inside)),
+        "outlier_fraction": float(1.0 - np.mean(inside)),
+    }
 
 
 def normalize_room(pcd, output_dir: str | Path, source_to_meters: np.ndarray):
@@ -89,20 +161,13 @@ def normalize_room(pcd, output_dir: str | Path, source_to_meters: np.ndarray):
     floor_model, floor_z, floor_inliers = detect_floor(pcd)
     room_pcd = o3d.geometry.PointCloud(pcd)
     room_pcd.translate((0.0, 0.0, -floor_z))
-
     pts = np.asarray(room_pcd.points)
     z = pts[:, 2]
     height = float(np.quantile(z, 0.99) - np.quantile(z, 0.01))
-    wall_idx = np.where((z > 0.10) & (z < max(0.30, height - 0.10)))[0]
-    walls = detect_walls(room_pcd.select_by_index(wall_idx.tolist()))
 
-    xy = pts[:, :2]
-    lo = np.quantile(xy, 0.01, axis=0)
-    hi = np.quantile(xy, 0.99, axis=0)
-    clipped = xy[(xy[:, 0] >= lo[0]) & (xy[:, 0] <= hi[0]) & (xy[:, 1] >= lo[1]) & (xy[:, 1] <= hi[1])]
-    if len(clipped) > 20000:
-        clipped = clipped[:: max(1, len(clipped)//20000)]
-    footprint = convex_hull_2d(clipped)
+    wall_idx = np.where((z > 0.15) & (z < max(0.50, min(height - 0.10, 2.60))))[0]
+    walls = detect_walls(room_pcd.select_by_index(wall_idx.tolist()))
+    rect = fit_rectangular_footprint(pts[:, :2], walls, trim=0.04)
 
     t_floor = np.eye(4)
     t_floor[2, 3] = -floor_z
@@ -111,15 +176,16 @@ def normalize_room(pcd, output_dir: str | Path, source_to_meters: np.ndarray):
     normalized_path = output_dir / "room_normalized.ply"
     o3d.io.write_point_cloud(str(normalized_path), room_pcd, write_ascii=False)
     report = {
-        "schema_version": "0.3",
+        "schema_version": "0.4",
         "coordinate_system": {"units": "meters", "up": "z", "floor_z": 0.0},
         "floor": {"plane_before_translation": floor_model.tolist(), "z_m": float(floor_z), "inliers": int(floor_inliers)},
         "estimated_room_height_m": height,
-        "walls": walls,
-        "footprint_xy_m": footprint.tolist(),
+        "wall_candidates": walls,
+        "room_model": "rectangle",
+        "rectangle": rect,
+        "footprint_xy_m": rect["corners_xy_m"],
         "source_to_room": source_to_room.tolist(),
         "normalized_pointcloud": str(normalized_path),
     }
-    path = output_dir / "room_geometry.json"
-    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (output_dir / "room_geometry.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report, room_pcd
