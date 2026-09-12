@@ -22,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--voxel", type=float, default=0.02, help="Voxel size in meters for point clouds")
     parser.add_argument("--samples", type=int, default=300000, help="FBX surface sample count")
     parser.add_argument("--source-up", choices=["x", "y", "z"], default="y", help="FBX source up axis")
+    parser.add_argument("--unit-scale", type=float, default=0.01, help="Multiply source FBX coordinates by this factor to get meters")
+    parser.add_argument("--skip-room", action="store_true", help="Skip floor/wall/footprint normalization")
     return parser
 
 
@@ -51,7 +53,14 @@ def _process_point_cloud(args) -> dict:
 def main() -> None:
     args = build_parser().parse_args()
     if args.input.suffix.lower() == ".fbx":
-        report = process_fbx(args.input, args.output_dir, args.samples, args.source_up)
+        report = process_fbx(
+            args.input,
+            args.output_dir,
+            sample_count=args.samples,
+            source_up=args.source_up,
+            unit_scale=args.unit_scale,
+            room_normalize=not args.skip_room,
+        )
     else:
         report = _process_point_cloud(args)
     print(json.dumps(report, indent=2))
