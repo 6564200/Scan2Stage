@@ -5,6 +5,22 @@ from pathlib import Path
 import numpy as np
 
 
+def _inside_rectangle(points: np.ndarray, rectangle: dict, margin_m: float = 0.02) -> np.ndarray:
+    xy = points[:, :2]
+    u = np.asarray(rectangle['axis_u'], dtype=float)
+    v = np.asarray(rectangle['axis_v'], dtype=float)
+    u0, u1 = map(float, rectangle['u_bounds'])
+    v0, v1 = map(float, rectangle['v_bounds'])
+    pu = xy @ u
+    pv = xy @ v
+    return (
+        (pu >= u0 + margin_m)
+        & (pu <= u1 - margin_m)
+        & (pv >= v0 + margin_m)
+        & (pv <= v1 - margin_m)
+    )
+
+
 def structural_mask(
     points: np.ndarray,
     rectangle: dict,
@@ -13,7 +29,6 @@ def structural_mask(
     wall_clearance_m: float = 0.06,
     wall_normal_alignment: float = 0.85,
 ) -> np.ndarray:
-    """Return True for points that look like floor or rectangular gallery walls."""
     points = np.asarray(points, dtype=float)
     if len(points) == 0:
         return np.zeros(0, dtype=bool)
@@ -27,7 +42,12 @@ def structural_mask(
     pu = xy @ u
     pv = xy @ v
 
-    inside_span = (pu >= u0 - wall_clearance_m) & (pu <= u1 + wall_clearance_m) & (pv >= v0 - wall_clearance_m) & (pv <= v1 + wall_clearance_m)
+    inside_span = (
+        (pu >= u0 - wall_clearance_m)
+        & (pu <= u1 + wall_clearance_m)
+        & (pv >= v0 - wall_clearance_m)
+        & (pv <= v1 + wall_clearance_m)
+    )
     near_u = (np.abs(pu - u0) <= wall_clearance_m) | (np.abs(pu - u1) <= wall_clearance_m)
     near_v = (np.abs(pv - v0) <= wall_clearance_m) | (np.abs(pv - v1) <= wall_clearance_m)
 
@@ -77,11 +97,13 @@ def extract_object_candidates(
     room_pcd,
     room_report: dict,
     output_dir: str | Path,
-    eps_m: float = 0.10,
-    min_points: int = 120,
-    min_cluster_points: int = 180,
+    eps_m: float = 0.08,
+    min_points: int = 8,
+    min_cluster_points: int = 12,
     floor_clearance_m: float = 0.08,
     wall_clearance_m: float = 0.06,
+    room_margin_m: float = 0.02,
+    voxel_size_m: float = 0.02,
 ):
     import open3d as o3d
 
@@ -89,15 +111,19 @@ def extract_object_candidates(
     output_dir.mkdir(parents=True, exist_ok=True)
     points = np.asarray(room_pcd.points)
     normals = np.asarray(room_pcd.normals) if room_pcd.has_normals() else None
-    mask = structural_mask(
+
+    inside = _inside_rectangle(points, room_report['rectangle'], margin_m=room_margin_m)
+    structural = structural_mask(
         points,
         room_report['rectangle'],
         normals=normals,
         floor_clearance_m=floor_clearance_m,
         wall_clearance_m=wall_clearance_m,
     )
-    object_idx = np.where(~mask)[0]
-    object_pcd = room_pcd.select_by_index(object_idx.tolist())
+    keep = inside & (~structural)
+    object_idx = np.where(keep)[0]
+    object_pcd_raw = room_pcd.select_by_index(object_idx.tolist())
+    object_pcd = object_pcd_raw.voxel_down_sample(voxel_size_m) if len(object_pcd_raw.points) else object_pcd_raw
 
     object_path = output_dir / 'object_points.ply'
     o3d.io.write_point_cloud(str(object_path), object_pcd, write_ascii=False)
@@ -105,7 +131,10 @@ def extract_object_candidates(
     if len(object_pcd.points) == 0:
         labels = np.empty(0, dtype=int)
     else:
-        labels = np.asarray(object_pcd.cluster_dbscan(eps=eps_m, min_points=min_points, print_progress=False), dtype=int)
+        labels = np.asarray(
+            object_pcd.cluster_dbscan(eps=eps_m, min_points=min_points, print_progress=False),
+            dtype=int,
+        )
 
     object_points = np.asarray(object_pcd.points)
     candidates = []
@@ -121,18 +150,22 @@ def extract_object_candidates(
         candidates.append(feat)
 
     report = {
-        'schema_version': '0.1',
-        'method': 'structure_mask+dbscan+pca',
+        'schema_version': '0.2',
+        'method': 'room_crop+structure_mask+voxel+dbscan+pca',
         'parameters': {
+            'room_margin_m': float(room_margin_m),
             'floor_clearance_m': float(floor_clearance_m),
             'wall_clearance_m': float(wall_clearance_m),
+            'voxel_size_m': float(voxel_size_m),
             'dbscan_eps_m': float(eps_m),
             'dbscan_min_points': int(min_points),
             'min_cluster_points': int(min_cluster_points),
         },
         'input_points': int(len(points)),
-        'structural_points': int(mask.sum()),
-        'object_points': int((~mask).sum()),
+        'outside_room_points': int((~inside).sum()),
+        'structural_points': int((inside & structural).sum()),
+        'object_points_before_voxel': int(len(object_pcd_raw.points)),
+        'object_points': int(len(object_pcd.points)),
         'dbscan_noise_points': int(np.sum(labels < 0)) if len(labels) else 0,
         'candidate_count': len(candidates),
         'candidates': candidates,
