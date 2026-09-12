@@ -7,6 +7,7 @@ import numpy as np
 from .scene_io import load_scene
 from .geometry import apply_transform, bounds, canonical_transform
 from .room_geometry import normalize_room
+from .object_candidates import extract_object_candidates
 from .sampling import sample_mesh_surface
 
 
@@ -60,7 +61,7 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
         raise RuntimeError(f'Failed to write {pointcloud_path}')
 
     report = {
-        'schema_version': '0.6',
+        'schema_version': '0.7',
         'input': str(scene.source_container),
         'resolved_mesh': str(scene.path),
         'format': scene.format,
@@ -80,8 +81,10 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
         'parts': part_reports,
     }
     if room_normalize:
-        room_report, _ = normalize_room(pcd, output_dir, source_to_meters)
+        room_report, room_pcd = normalize_room(pcd, output_dir, source_to_meters)
         report['room_geometry'] = room_report
+        object_report, _ = extract_object_candidates(room_pcd, room_report, output_dir)
+        report['object_candidates'] = object_report
     (output_dir / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     return report
 
