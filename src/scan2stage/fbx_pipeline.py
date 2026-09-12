@@ -6,20 +6,25 @@ import numpy as np
 
 from .fbx_io import load_fbx
 from .geometry import apply_transform, bounds, canonical_transform
+from .room_geometry import normalize_room
 from .sampling import sample_mesh_surface
 
 
-def process_fbx(input_path, output_dir, sample_count=300000, source_up="y", seed=42):
+def process_fbx(input_path, output_dir, sample_count=300000, source_up="y", seed=42, unit_scale=0.01, room_normalize=True):
     import open3d as o3d
 
     scene = load_fbx(input_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    transform = canonical_transform(source_up)
+
+    axis_transform = canonical_transform(source_up)
+    scale_transform = np.diag([unit_scale, unit_scale, unit_scale, 1.0])
+    source_to_meters = scale_transform @ axis_transform
+    rotation = axis_transform[:3, :3]
     rng = np.random.default_rng(seed)
 
     all_source = np.concatenate([part.vertices for part in scene.parts], axis=0)
-    all_canonical = apply_transform(all_source, transform)
+    all_meters = apply_transform(all_source, source_to_meters)
     tri_counts = np.array([len(p.triangles) for p in scene.parts], dtype=float)
     if tri_counts.sum() <= 0:
         raise ValueError("FBX contains no triangles")
@@ -34,8 +39,8 @@ def process_fbx(input_path, output_dir, sample_count=300000, source_up="y", seed
             part.vertices, part.triangles, int(count), rng,
             triangle_uvs=part.triangle_uvs, texture=part.texture,
         )
-        sampled_points.append(apply_transform(points, transform))
-        sampled_normals.append(normals @ transform[:3, :3].T)
+        sampled_points.append(apply_transform(points, source_to_meters))
+        sampled_normals.append(normals @ rotation.T)
         if colors is None:
             all_have_color = False
         else:
@@ -67,22 +72,28 @@ def process_fbx(input_path, output_dir, sample_count=300000, source_up="y", seed
         raise RuntimeError(f"Failed to write {pointcloud_path}")
 
     report = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "input": str(scene.path),
         "format": "fbx",
         "source_up": source_up,
         "canonical_up": "z",
-        "transform_source_to_canonical": transform.tolist(),
+        "source_unit_scale_to_meters": float(unit_scale),
+        "transform_source_to_meters": source_to_meters.tolist(),
         "mesh_count": len(scene.parts),
         "material_count": scene.material_count,
         "vertices_total": int(sum(len(p.vertices) for p in scene.parts)),
         "triangles_total": int(sum(len(p.triangles) for p in scene.parts)),
         "bounds_source": bounds(all_source),
-        "bounds_canonical": bounds(all_canonical),
+        "bounds_meters": bounds(all_meters),
         "sample_count": int(len(points)),
         "sample_has_color": colors is not None,
         "pointcloud": str(pointcloud_path),
         "parts": part_reports,
     }
+
+    if room_normalize:
+        room_report, _ = normalize_room(pcd, output_dir, source_to_meters)
+        report["room_geometry"] = room_report
+
     (output_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
