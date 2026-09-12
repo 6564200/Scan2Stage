@@ -66,6 +66,44 @@ def structural_mask(
     return structural | wall_like
 
 
+def _strip_large_planes(
+    pcd,
+    max_planes: int = 8,
+    distance_threshold_m: float = 0.025,
+    min_inliers: int = 900,
+    min_major_extent_m: float = 1.4,
+    min_minor_extent_m: float = 0.8,
+):
+    work = pcd
+    removed = []
+    for _ in range(max_planes):
+        if len(work.points) < min_inliers:
+            break
+        model, inliers = work.segment_plane(
+            distance_threshold=distance_threshold_m,
+            ransac_n=3,
+            num_iterations=1200,
+        )
+        if len(inliers) < min_inliers:
+            break
+        pts = np.asarray(work.select_by_index(inliers).points)
+        center = pts.mean(axis=0)
+        centered = pts - center
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        local = centered @ vh.T
+        ext = np.quantile(local, 0.98, axis=0) - np.quantile(local, 0.02, axis=0)
+        planar_extents = sorted([float(ext[0]), float(ext[1]), float(ext[2])], reverse=True)
+        if planar_extents[0] < min_major_extent_m or planar_extents[1] < min_minor_extent_m:
+            break
+        removed.append({
+            'plane': [float(x) for x in model],
+            'inliers': int(len(inliers)),
+            'extents_m': [float(x) for x in ext],
+        })
+        work = work.select_by_index(inliers, invert=True)
+    return work, removed
+
+
 def _candidate_features(points: np.ndarray) -> dict:
     center = np.median(points, axis=0)
     centered = points - center
@@ -97,8 +135,8 @@ def extract_object_candidates(
     room_pcd,
     room_report: dict,
     output_dir: str | Path,
-    eps_m: float = 0.08,
-    min_points: int = 8,
+    eps_m: float = 0.07,
+    min_points: int = 6,
     min_cluster_points: int = 12,
     floor_clearance_m: float = 0.08,
     wall_clearance_m: float = 0.06,
@@ -123,7 +161,8 @@ def extract_object_candidates(
     keep = inside & (~structural)
     object_idx = np.where(keep)[0]
     object_pcd_raw = room_pcd.select_by_index(object_idx.tolist())
-    object_pcd = object_pcd_raw.voxel_down_sample(voxel_size_m) if len(object_pcd_raw.points) else object_pcd_raw
+    object_pcd_voxel = object_pcd_raw.voxel_down_sample(voxel_size_m) if len(object_pcd_raw.points) else object_pcd_raw
+    object_pcd, removed_planes = _strip_large_planes(object_pcd_voxel)
 
     object_path = output_dir / 'object_points.ply'
     o3d.io.write_point_cloud(str(object_path), object_pcd, write_ascii=False)
@@ -150,8 +189,8 @@ def extract_object_candidates(
         candidates.append(feat)
 
     report = {
-        'schema_version': '0.2',
-        'method': 'room_crop+structure_mask+voxel+dbscan+pca',
+        'schema_version': '0.3',
+        'method': 'room_crop+structure_mask+voxel+large_plane_strip+dbscan+pca',
         'parameters': {
             'room_margin_m': float(room_margin_m),
             'floor_clearance_m': float(floor_clearance_m),
@@ -165,6 +204,9 @@ def extract_object_candidates(
         'outside_room_points': int((~inside).sum()),
         'structural_points': int((inside & structural).sum()),
         'object_points_before_voxel': int(len(object_pcd_raw.points)),
+        'object_points_after_voxel': int(len(object_pcd_voxel.points)),
+        'removed_large_plane_count': len(removed_planes),
+        'removed_large_planes': removed_planes,
         'object_points': int(len(object_pcd.points)),
         'dbscan_noise_points': int(np.sum(labels < 0)) if len(labels) else 0,
         'candidate_count': len(candidates),
