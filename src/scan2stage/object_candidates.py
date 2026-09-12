@@ -66,44 +66,6 @@ def structural_mask(
     return structural | wall_like
 
 
-def _strip_large_planes(
-    pcd,
-    max_planes: int = 8,
-    distance_threshold_m: float = 0.025,
-    min_inliers: int = 900,
-    min_major_extent_m: float = 1.4,
-    min_minor_extent_m: float = 0.8,
-):
-    work = pcd
-    removed = []
-    for _ in range(max_planes):
-        if len(work.points) < min_inliers:
-            break
-        model, inliers = work.segment_plane(
-            distance_threshold=distance_threshold_m,
-            ransac_n=3,
-            num_iterations=1200,
-        )
-        if len(inliers) < min_inliers:
-            break
-        pts = np.asarray(work.select_by_index(inliers).points)
-        center = pts.mean(axis=0)
-        centered = pts - center
-        _, _, vh = np.linalg.svd(centered, full_matrices=False)
-        local = centered @ vh.T
-        ext = np.quantile(local, 0.98, axis=0) - np.quantile(local, 0.02, axis=0)
-        planar_extents = sorted([float(ext[0]), float(ext[1]), float(ext[2])], reverse=True)
-        if planar_extents[0] < min_major_extent_m or planar_extents[1] < min_minor_extent_m:
-            break
-        removed.append({
-            'plane': [float(x) for x in model],
-            'inliers': int(len(inliers)),
-            'extents_m': [float(x) for x in ext],
-        })
-        work = work.select_by_index(inliers, invert=True)
-    return work, removed
-
-
 def _candidate_features(points: np.ndarray) -> dict:
     center = np.median(points, axis=0)
     centered = points - center
@@ -119,9 +81,20 @@ def _candidate_features(points: np.ndarray) -> dict:
     robust_center = center + ((lo + hi) * 0.5) @ axes.T
     total = float(eigvals.sum())
     ratios = (eigvals / total).tolist() if total > 0 else [0.0, 0.0, 0.0]
+    sorted_extents = sorted((float(x) for x in extents), reverse=True)
+    if sorted_extents[1] >= 0.10 and sorted_extents[2] < 0.10:
+        shape = 'planar'
+    elif sorted_extents[0] >= 0.10 and sorted_extents[1] < 0.10:
+        shape = 'linear'
+    elif sorted_extents[1] >= 0.10:
+        shape = 'volumetric'
+    else:
+        shape = 'tiny'
     return {
         'center_m': robust_center.tolist(),
         'extents_m': extents.tolist(),
+        'sorted_extents_m': sorted_extents,
+        'shape': shape,
         'axes': axes.tolist(),
         'eigenvalues': eigvals.tolist(),
         'variance_ratios': ratios,
@@ -142,6 +115,7 @@ def extract_object_candidates(
     wall_clearance_m: float = 0.06,
     room_margin_m: float = 0.02,
     voxel_size_m: float = 0.02,
+    min_two_axes_m: float = 0.10,
 ):
     import open3d as o3d
 
@@ -161,8 +135,7 @@ def extract_object_candidates(
     keep = inside & (~structural)
     object_idx = np.where(keep)[0]
     object_pcd_raw = room_pcd.select_by_index(object_idx.tolist())
-    object_pcd_voxel = object_pcd_raw.voxel_down_sample(voxel_size_m) if len(object_pcd_raw.points) else object_pcd_raw
-    object_pcd, removed_planes = _strip_large_planes(object_pcd_voxel)
+    object_pcd = object_pcd_raw.voxel_down_sample(voxel_size_m) if len(object_pcd_raw.points) else object_pcd_raw
 
     object_path = output_dir / 'object_points.ply'
     o3d.io.write_point_cloud(str(object_path), object_pcd, write_ascii=False)
@@ -177,6 +150,7 @@ def extract_object_candidates(
 
     object_points = np.asarray(object_pcd.points)
     candidates = []
+    rejected_tiny = 0
     for label in sorted(set(labels.tolist())):
         if label < 0:
             continue
@@ -184,13 +158,26 @@ def extract_object_candidates(
         if len(idx) < min_cluster_points:
             continue
         feat = _candidate_features(object_points[idx])
+        if feat['sorted_extents_m'][1] < min_two_axes_m:
+            rejected_tiny += 1
+            continue
         feat['id'] = f'candidate_{len(candidates):03d}'
         feat['dbscan_label'] = int(label)
+        feat['classification'] = {
+            'class_id': 'unknown',
+            'confidence': 0.0,
+            'needs_user_confirmation': True,
+        }
         candidates.append(feat)
 
     report = {
-        'schema_version': '0.3',
-        'method': 'room_crop+structure_mask+voxel+large_plane_strip+dbscan+pca',
+        'schema_version': '0.4',
+        'method': 'room_crop+perimeter_structure_mask+voxel+dbscan+pca',
+        'policy': {
+            'keep_internal_planes': True,
+            'human_confirmation_default': True,
+            'tiny_filter': 'reject only when the second-largest robust extent is below threshold',
+        },
         'parameters': {
             'room_margin_m': float(room_margin_m),
             'floor_clearance_m': float(floor_clearance_m),
@@ -199,16 +186,15 @@ def extract_object_candidates(
             'dbscan_eps_m': float(eps_m),
             'dbscan_min_points': int(min_points),
             'min_cluster_points': int(min_cluster_points),
+            'min_two_axes_m': float(min_two_axes_m),
         },
         'input_points': int(len(points)),
         'outside_room_points': int((~inside).sum()),
         'structural_points': int((inside & structural).sum()),
         'object_points_before_voxel': int(len(object_pcd_raw.points)),
-        'object_points_after_voxel': int(len(object_pcd_voxel.points)),
-        'removed_large_plane_count': len(removed_planes),
-        'removed_large_planes': removed_planes,
         'object_points': int(len(object_pcd.points)),
         'dbscan_noise_points': int(np.sum(labels < 0)) if len(labels) else 0,
+        'rejected_tiny_candidate_count': int(rejected_tiny),
         'candidate_count': len(candidates),
         'candidates': candidates,
         'object_pointcloud': str(object_path),
