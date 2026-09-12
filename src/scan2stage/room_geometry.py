@@ -5,6 +5,8 @@ from pathlib import Path
 import math
 import numpy as np
 
+WORKING_HEIGHT_M = 2.5
+
 
 def _plane_z(model: np.ndarray) -> float:
     a, b, c, d = model
@@ -153,19 +155,23 @@ def fit_rectangular_footprint(points_xy: np.ndarray, walls: list[dict], trim=0.0
     }
 
 
-def normalize_room(pcd, output_dir: str | Path, source_to_meters: np.ndarray):
+def normalize_room(pcd, output_dir: str | Path, source_to_meters: np.ndarray, working_height_m: float = WORKING_HEIGHT_M):
     import open3d as o3d
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     floor_model, floor_z, floor_inliers = detect_floor(pcd)
-    room_pcd = o3d.geometry.PointCloud(pcd)
-    room_pcd.translate((0.0, 0.0, -floor_z))
+    aligned = o3d.geometry.PointCloud(pcd)
+    aligned.translate((0.0, 0.0, -floor_z))
+
+    aligned_pts = np.asarray(aligned.points)
+    z_all = aligned_pts[:, 2]
+    keep_idx = np.where((z_all >= -0.05) & (z_all <= working_height_m))[0]
+    room_pcd = aligned.select_by_index(keep_idx.tolist())
     pts = np.asarray(room_pcd.points)
     z = pts[:, 2]
-    height = float(np.quantile(z, 0.99) - np.quantile(z, 0.01))
 
-    wall_idx = np.where((z > 0.15) & (z < max(0.50, min(height - 0.10, 2.60))))[0]
+    wall_idx = np.where((z > 0.15) & (z < working_height_m - 0.05))[0]
     walls = detect_walls(room_pcd.select_by_index(wall_idx.tolist()))
     rect = fit_rectangular_footprint(pts[:, :2], walls, trim=0.04)
 
@@ -176,10 +182,13 @@ def normalize_room(pcd, output_dir: str | Path, source_to_meters: np.ndarray):
     normalized_path = output_dir / "room_normalized.ply"
     o3d.io.write_point_cloud(str(normalized_path), room_pcd, write_ascii=False)
     report = {
-        "schema_version": "0.4",
+        "schema_version": "0.5",
         "coordinate_system": {"units": "meters", "up": "z", "floor_z": 0.0},
+        "working_volume": {"min_z_m": 0.0, "max_z_m": float(working_height_m)},
         "floor": {"plane_before_translation": floor_model.tolist(), "z_m": float(floor_z), "inliers": int(floor_inliers)},
-        "estimated_room_height_m": height,
+        "points_before_height_clip": int(len(aligned.points)),
+        "points_after_height_clip": int(len(room_pcd.points)),
+        "removed_above_working_height": int(np.sum(z_all > working_height_m)),
         "wall_candidates": walls,
         "room_model": "rectangle",
         "rectangle": rect,
