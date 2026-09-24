@@ -139,3 +139,27 @@ structural result
 ~~~
 
 Spatial tiling and local candidate verification are naturally parallel. A 16-core CPU and 64 GB RAM are a practical workstation target; GPU becomes more important when image detectors or segmentation are introduced.
+
+
+## Rear/popper zone semantics
+
+The area immediately in front of the rear bullet trap has a restricted object
+vocabulary. Normal decorative partitions are not valid there. Structures in that
+zone must be interpreted using rear-stage semantics:
+
+- poppers / plates / other steel;
+- rear bullet-trap geometry;
+- metal shields used to conceal moving targets;
+- explicitly unresolved rear-zone structure.
+
+The reference exemplar `scan_metal_shield_001.glb` has been added as the first
+metal-shield prior. Its scan footprint is roughly 1.5–1.7 m long and about 1.2 m
+high; recognition uses deliberately broad ranges because scene scans are partial.
+
+## Structural map geometry
+
+Structural objects are no longer rendered only from their PCA major axis.
+The detector now stores a rectilinear boundary reconstructed from occupied
+top-view raster cells. This boundary preserves corners, thickness changes and
+L/U-shaped decorative partitions. The PCA line remains only as a fallback for
+older reports.

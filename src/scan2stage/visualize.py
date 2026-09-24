@@ -129,33 +129,45 @@ def render_semantic_topview(
             vmax=max(vmax, 1e-6),
         )
 
-    # Structural layer.
+    # Structural layer. Prefer the actual raster footprint boundary whenever it
+    # is available; PCA centerlines are only a backwards-compatible fallback.
+    structure_style = {
+        "partition_or_wall": ("dimgray", 2.7, 0.90),
+        "large_structure": ("saddlebrown", 3.4, 0.78),
+        "compact_structure": ("darkorange", 2.2, 0.90),
+        "unknown_structure": ("mediumpurple", 1.6, 0.70),
+        "metal_shield": ("steelblue", 3.2, 0.95),
+        "rear_zone_structure": ("slateblue", 2.4, 0.85),
+    }
+
     for obj in scene.get("structural_components", []):
         cls = obj.get("class_id", "unknown_structure")
         center = np.asarray(obj["center_xy_m"], dtype=float)
         major = float(obj.get("extent_major_m", 0.2))
-        minor = float(obj.get("extent_minor_m", 0.1))
         axes = np.asarray(obj.get("axes_xy", np.eye(2)), dtype=float)
+        color, linewidth, alpha = structure_style.get(cls, ("mediumpurple", 1.6, 0.70))
 
-        if cls == "partition_or_wall":
-            a, b = _major_segment(center, axes, major)
-            ax.plot([a[0], b[0]], [a[1], b[1]], linewidth=3.0, color="dimgray", alpha=0.9)
-        elif cls == "large_structure":
-            a, b = _major_segment(center, axes, major)
-            ax.plot([a[0], b[0]], [a[1], b[1]], linewidth=4.0, color="saddlebrown", alpha=0.75)
-        elif cls == "compact_structure":
-            ax.add_patch(Rectangle(
-                (center[0] - major / 2, center[1] - minor / 2),
-                major,
-                minor,
-                fill=False,
-                linewidth=2.0,
-                edgecolor="darkorange",
-                alpha=0.9,
-            ))
+        segments = obj.get("boundary_segments_xy_m") or []
+        if segments:
+            for segment in segments:
+                p0 = segment[0]
+                p1 = segment[1]
+                ax.plot(
+                    [p0[0], p1[0]],
+                    [p0[1], p1[1]],
+                    linewidth=linewidth,
+                    color=color,
+                    alpha=alpha,
+                    solid_capstyle="round",
+                )
         else:
             a, b = _major_segment(center, axes, major)
-            ax.plot([a[0], b[0]], [a[1], b[1]], linewidth=1.5, color="mediumpurple", alpha=0.65)
+            ax.plot([a[0], b[0]], [a[1], b[1]], linewidth=linewidth, color=color, alpha=alpha)
+
+        if show_labels and cls == "metal_shield":
+            ax.text(center[0], center[1], "SH", fontsize=8, ha="center", va="center", color="steelblue")
+        elif show_labels and cls == "rear_zone_structure":
+            ax.text(center[0], center[1], "R?", fontsize=8, ha="center", va="center", color="slateblue")
 
     # Fault Lines.
     for obj in scene.get("fault_lines", []):
@@ -236,6 +248,7 @@ def render_semantic_topview(
     handles = [
         Line2D([0], [0], color="dimgray", lw=3, label="Wall / partition"),
         Line2D([0], [0], color="saddlebrown", lw=4, label="Large structure / trap candidate"),
+        Line2D([0], [0], color="steelblue", lw=3, label="Metal shield (rear/popper zone)"),
         Line2D([0], [0], color="darkorange", lw=2, label="Decor / compact structure"),
         Line2D([0], [0], color="red", lw=4, label="Fault Line"),
         Line2D([0], [0], color="forestgreen", lw=3, marker=">", label="Metric target + facing"),

@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.2",
+  "schema_version": "0.3",
   "coordinate_convention": {
     "units": "meters",
     "up": "+Z",
@@ -91,6 +91,22 @@
       "shape_family": "planar_or_linear",
       "placement": "rear_bullet_trap_zone",
       "faces_shooter": true
+    },
+    {
+      "class_id": "metal_shield",
+      "display_name": "Metal shield for moving targets",
+      "shape_family": "composite_planar",
+      "placement": "rear_bullet_trap_zone",
+      "recognition_priority": "high",
+      "context_rule": "valid near poppers/rear bullet trap; ordinary decorative partition is invalid there",
+      "exemplar": "scan_metal_shield_001.glb"
+    },
+    {
+      "class_id": "rear_zone_structure",
+      "display_name": "Unresolved rear-zone structure",
+      "shape_family": "any",
+      "placement": "rear_bullet_trap_zone",
+      "requires_user_confirmation": true
     },
     {
       "class_id": "partition",

@@ -125,6 +125,63 @@ def connected_components(mask: np.ndarray, min_cells: int = 1) -> list[np.ndarra
     return out
 
 
+def _component_boundary_segments(cells: np.ndarray, topview: dict) -> list[list[list[float]]]:
+    """Return a compact rectilinear footprint boundary from occupied raster cells.
+
+    Shared cell edges are removed and collinear boundary edges are merged. This
+    preserves L/U/angled/stair-step partition geometry instead of reducing every
+    structure to one PCA line.
+    """
+    res = float(topview["resolution_m"])
+    x0, y0 = map(float, topview["origin_xy_m"])
+    occupied = {(int(y), int(x)) for y, x in cells}
+
+    horizontal: dict[int, list[tuple[int, int]]] = {}
+    vertical: dict[int, list[tuple[int, int]]] = {}
+
+    for y, x in occupied:
+        if (y - 1, x) not in occupied:
+            horizontal.setdefault(y, []).append((x, x + 1))
+        if (y + 1, x) not in occupied:
+            horizontal.setdefault(y + 1, []).append((x, x + 1))
+        if (y, x - 1) not in occupied:
+            vertical.setdefault(x, []).append((y, y + 1))
+        if (y, x + 1) not in occupied:
+            vertical.setdefault(x + 1, []).append((y, y + 1))
+
+    def merge(intervals):
+        intervals = sorted(intervals)
+        if not intervals:
+            return []
+        out = []
+        start, end = intervals[0]
+        for a, b in intervals[1:]:
+            if a <= end:
+                end = max(end, b)
+            else:
+                out.append((start, end))
+                start, end = a, b
+        out.append((start, end))
+        return out
+
+    segments = []
+    for gy, intervals in horizontal.items():
+        wy = y0 + gy * res
+        for a, b in merge(intervals):
+            segments.append([
+                [x0 + a * res, wy],
+                [x0 + b * res, wy],
+            ])
+    for gx, intervals in vertical.items():
+        wx = x0 + gx * res
+        for a, b in merge(intervals):
+            segments.append([
+                [wx, y0 + a * res],
+                [wx, y0 + b * res],
+            ])
+    return segments
+
+
 def _component_geometry(cells: np.ndarray, topview: dict) -> dict:
     res = float(topview["resolution_m"])
     x0, y0 = map(float, topview["origin_xy_m"])
@@ -142,11 +199,24 @@ def _component_geometry(cells: np.ndarray, topview: dict) -> dict:
     lo = local.min(axis=0)
     hi = local.max(axis=0)
     ext = hi - lo + res
+
+    ys, xs = cells[:, 0], cells[:, 1]
+    min_h = topview["min_height"][ys, xs]
+    max_h = topview["max_height"][ys, xs]
+    valid_min = min_h[np.isfinite(min_h)]
+    valid_max = max_h[np.isfinite(max_h)]
+    z_min = float(np.quantile(valid_min, 0.05)) if len(valid_min) else 0.0
+    z_max = float(np.quantile(valid_max, 0.95)) if len(valid_max) else 0.0
+
     return {
         "center_xy_m": center.tolist(),
         "axes_xy": axes.tolist(),
         "extent_major_m": float(max(ext)),
         "extent_minor_m": float(min(ext)),
+        "height_min_m": z_min,
+        "height_max_m": z_max,
+        "height_m": float(max(0.0, z_max - z_min)),
+        "boundary_segments_xy_m": _component_boundary_segments(cells, topview),
         "cell_count": int(len(cells)),
     }
 
@@ -178,6 +248,100 @@ def detect_structural_components(topview: dict) -> list[dict]:
         })
         result.append(feat)
     return result
+
+
+def _range_score(value: float, low: float, high: float, margin: float) -> float:
+    if low <= value <= high:
+        return 1.0
+    if value < low:
+        return max(0.0, 1.0 - (low - value) / margin)
+    return max(0.0, 1.0 - (value - high) / margin)
+
+
+def apply_rear_zone_semantics(
+    structures: list[dict],
+    points: np.ndarray,
+    shooting: dict,
+    metal_proposals: list[dict],
+    rear_band_m: float = 1.35,
+) -> list[dict]:
+    """Apply shooting-gallery semantics to structures near the rear/popper zone.
+
+    A normal decorative partition is not a valid interpretation inside the
+    popper area immediately in front of the rear bullet trap. The known
+    scan_metal_shield_001 exemplar has an observed profile around 1.5-1.7 m
+    major span and about 1.2 m height; broad ranges are intentionally used here
+    because scene scans are noisy and partially occluded.
+    """
+    pts = np.asarray(points, dtype=float)
+    direction = np.asarray(shooting["direction_xy"], dtype=float)
+    direction /= max(np.linalg.norm(direction), 1e-9)
+    rear_edge = float(np.quantile(pts[:, :2] @ direction, 0.985))
+
+    metal_xy = []
+    for obj in metal_proposals:
+        center = obj.get("center_m")
+        if center and len(center) >= 2:
+            metal_xy.append(np.asarray(center[:2], dtype=float))
+
+    for obj in structures:
+        center = np.asarray(obj["center_xy_m"], dtype=float)
+        rear_distance = float(rear_edge - center @ direction)
+        obj["rear_proximity_m"] = rear_distance
+
+        if rear_distance < -0.10 or rear_distance > rear_band_m:
+            continue
+
+        # Very large geometry on the extreme rear boundary is more likely the
+        # rear wall / bullet-trap envelope than a free-standing shield.
+        major = float(obj.get("extent_major_m", 0.0))
+        minor = float(obj.get("extent_minor_m", 0.0))
+        height = float(obj.get("height_m", 0.0))
+        if rear_distance <= 0.22 and major >= 2.0:
+            obj["context_zone"] = "rear_boundary"
+            continue
+
+        nearest_metal = None
+        if metal_xy:
+            nearest_metal = min(float(np.linalg.norm(center - m)) for m in metal_xy)
+        near_metal = nearest_metal is not None and nearest_metal <= 1.15
+
+        if obj.get("class_id") not in {
+            "partition_or_wall",
+            "compact_structure",
+            "unknown_structure",
+        }:
+            continue
+
+        length_score = _range_score(major, 1.20, 2.05, 0.70)
+        height_score = _range_score(height, 0.85, 1.50, 0.65)
+        thickness_score = _range_score(minor, 0.12, 0.65, 0.45)
+        rear_score = max(0.0, 1.0 - max(rear_distance - 0.20, 0.0) / rear_band_m)
+        context_score = 1.0 if near_metal else 0.45
+        shield_score = (
+            0.30 * length_score
+            + 0.30 * height_score
+            + 0.15 * thickness_score
+            + 0.15 * rear_score
+            + 0.10 * context_score
+        )
+
+        # Domain rule: in the popper/rear target zone do not call an interior
+        # structure a decorative partition. Use the shield hypothesis when its
+        # geometry is compatible; otherwise keep it explicitly unresolved.
+        if shield_score >= 0.52:
+            obj["class_id"] = "metal_shield"
+            obj["confidence"] = float(shield_score)
+            obj["classification_reason"] = "rear/popper zone + metal-shield geometry"
+        elif obj.get("class_id") == "partition_or_wall":
+            obj["class_id"] = "rear_zone_structure"
+            obj["confidence"] = float(shield_score)
+            obj["classification_reason"] = "partition is invalid in rear/popper zone; needs review"
+
+        obj["context_zone"] = "rear/popper"
+        obj["nearest_metal_target_m"] = nearest_metal
+
+    return structures
 
 
 def _red_mask(rgb: np.ndarray) -> np.ndarray:
@@ -431,6 +595,7 @@ def analyze_structural_scene(
     shooting = estimate_shooting_direction(points, room_report["rectangle"])
     metric = generate_target_proposals(points, topview, np.asarray(shooting["direction_xy"]))
     metal = detect_rear_metal_proposals(points, room_report["rectangle"], shooting)
+    structures = apply_rear_zone_semantics(structures, points, shooting, metal)
 
     npz_path = output_dir / "topview_layers.npz"
     np.savez_compressed(
@@ -443,7 +608,7 @@ def analyze_structural_scene(
     )
 
     report = {
-        "schema_version": "0.8",
+        "schema_version": "0.9",
         "method": "structural-first multi-height top-view + local 3D verification",
         "coordinate_system": {"units": "meters", "up": "z", "top_view_plane": "xy"},
         "policy": {
@@ -452,7 +617,7 @@ def analyze_structural_scene(
             "partial_target_observations_allowed": True,
             "metric_subtype_after_generic_detection": True,
             "metal_expected_near_rear_bullet_trap": True,
-            "targets_expected_to_face_shooter": True,
+            "targets_expected_to_face_shooter": True,\n            "decorative_partitions_invalid_in_rear_popper_zone": True,
         },
         "topview": {
             "origin_xy_m": topview["origin_xy_m"],
