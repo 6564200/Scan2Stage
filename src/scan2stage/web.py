@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -26,11 +26,24 @@ def store() -> Store:
     return Store()
 
 
+def render(request: Request, template_name: str, context: dict):
+    """Render a template using the current Starlette TemplateResponse signature."""
+    return templates.TemplateResponse(
+        request=request,
+        name=template_name,
+        context=context,
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
+
 @app.get("/")
 def home(request: Request):
     s = store()
-    return templates.TemplateResponse("home.html", {
-        "request": request,
+    return render(request, "home.html", {
         "gallery_count": len(s.galleries()),
         "run_count": len(s.runs()),
         "data_root": str(s.root),
@@ -39,8 +52,7 @@ def home(request: Request):
 
 @app.get("/upload")
 def upload_page(request: Request):
-    return templates.TemplateResponse("upload.html", {
-        "request": request,
+    return render(request, "upload.html", {
         "galleries": store().galleries(),
     })
 
@@ -82,8 +94,7 @@ def gallery_page(request: Request, gallery_id: str):
     gallery = s.gallery(gallery_id)
     if not gallery:
         raise HTTPException(404, "Gallery not found")
-    return templates.TemplateResponse("gallery.html", {
-        "request": request,
+    return render(request, "gallery.html", {
         "gallery": gallery,
         "scans": s.scans(gallery_id),
         "settings": load_settings(s.root),
@@ -121,7 +132,9 @@ async def create_run(request: Request, gallery_id: str):
 
 @app.get("/runs")
 def runs_page(request: Request):
-    return templates.TemplateResponse("runs.html", {"request": request, "runs": store().runs()})
+    return render(request, "runs.html", {
+        "runs": store().runs(),
+    })
 
 
 @app.get("/run/{run_id}")
@@ -130,8 +143,7 @@ def run_page(request: Request, run_id: str):
     run = s.run(run_id)
     if not run:
         raise HTTPException(404, "Run not found")
-    return templates.TemplateResponse("run.html", {
-        "request": request,
+    return render(request, "run.html", {
         "run": run,
         "scans": s.run_scans(run_id),
         "artifacts": s.artifacts(run_id),
@@ -151,8 +163,7 @@ def results_page(request: Request, run_id: str):
     for artifact in artifacts:
         grouped.setdefault(artifact["scan_id"] or "run", []).append(artifact)
 
-    return templates.TemplateResponse("results.html", {
-        "request": request,
+    return render(request, "results.html", {
         "run": run,
         "scans": scans,
         "grouped": grouped,
@@ -167,8 +178,7 @@ def logs_page(request: Request, run_id: str):
         raise HTTPException(404, "Run not found")
     path = s.log_path(run_id)
     text = path.read_text(encoding="utf-8", errors="replace") if path.exists() else "Лог ещё не создан."
-    return templates.TemplateResponse("logs.html", {
-        "request": request,
+    return render(request, "logs.html", {
         "run": run,
         "log_text": text,
     })
@@ -193,8 +203,7 @@ def artifact_file(artifact_id: str, download: bool = False):
 @app.get("/settings")
 def settings_page(request: Request):
     s = store()
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
+    return render(request, "settings.html", {
         "settings": load_settings(s.root),
         "descriptions": SETTING_DESCRIPTIONS,
         "data_root": str(s.root),
