@@ -35,6 +35,33 @@ def render(request: Request, template_name: str, context: dict):
     )
 
 
+def launch_run(s: Store, gallery_id: str, scan_ids: list[str]) -> str:
+    """Create and start a processing Run using the current local settings."""
+    if not scan_ids:
+        raise HTTPException(400, "Select at least one scan")
+
+    cfg = load_settings(s.root)
+    if s.active_run_count() >= cfg.max_parallel_runs:
+        raise HTTPException(
+            409,
+            f"Достигнут лимит параллельных задач: {cfg.max_parallel_runs}. "
+            "Дождитесь завершения текущего Run.",
+        )
+
+    rid = s.create_run(gallery_id, scan_ids, cfg.model_dump_json())
+    log_handle = s.log_path(rid).open("a", encoding="utf-8")
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    subprocess.Popen(
+        [sys.executable, "-m", "scan2stage.worker", rid],
+        stdout=log_handle,
+        stderr=subprocess.STDOUT,
+        cwd=str(PACKAGE_DIR.parent.parent),
+        creationflags=creationflags,
+    )
+    log_handle.close()
+    return rid
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return Response(status_code=204)
@@ -106,27 +133,26 @@ async def create_run(request: Request, gallery_id: str):
     s = store()
     form = await request.form()
     scan_ids = form.getlist("scan_id")
-    if not scan_ids:
-        raise HTTPException(400, "Select at least one scan")
+    rid = launch_run(s, gallery_id, scan_ids)
+    return RedirectResponse(f"/run/{rid}", status_code=303)
 
-    cfg = load_settings(s.root)
-    if s.active_run_count() >= cfg.max_parallel_runs:
-        raise HTTPException(
-            409,
-            f"Достигнут лимит параллельных задач: {cfg.max_parallel_runs}. Дождитесь завершения текущего Run.",
-        )
 
-    rid = s.create_run(gallery_id, scan_ids, cfg.model_dump_json())
-    log_handle = s.log_path(rid).open("a", encoding="utf-8")
-    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    subprocess.Popen(
-        [sys.executable, "-m", "scan2stage.worker", rid],
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        cwd=str(PACKAGE_DIR.parent.parent),
-        creationflags=creationflags,
+@app.post("/gallery/{gallery_id}/scan/{scan_id}/rerun")
+def rerun_scan(gallery_id: str, scan_id: str):
+    """Reprocess one already-uploaded scan without uploading it again."""
+    s = store()
+    gallery = s.gallery(gallery_id)
+    if not gallery:
+        raise HTTPException(404, "Gallery not found")
+
+    scan = s.one(
+        "SELECT * FROM scans WHERE id=? AND gallery_id=?",
+        (scan_id, gallery_id),
     )
-    log_handle.close()
+    if not scan:
+        raise HTTPException(404, "Scan not found in this Gallery")
+
+    rid = launch_run(s, gallery_id, [scan_id])
     return RedirectResponse(f"/run/{rid}", status_code=303)
 
 

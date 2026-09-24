@@ -10,7 +10,15 @@
   {% if scans %}
   <form method="post" action="/gallery/{{ gallery.id }}/run">
     <table>
-      <thead><tr><th></th><th>Файл</th><th>Размер</th><th>Добавлен</th></tr></thead>
+      <thead>
+        <tr>
+          <th></th>
+          <th>Файл</th>
+          <th>Размер</th>
+          <th>Добавлен</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
       <tbody>
       {% for s in scans %}
       <tr>
@@ -18,12 +26,24 @@
         <td>{{ s.original_name }}</td>
         <td>{{ "%.1f"|format(s.size_bytes / 1024 / 1024) }} MB</td>
         <td>{{ s.created_at }}</td>
+        <td>
+          <button
+            class="button small"
+            type="submit"
+            formaction="/gallery/{{ gallery.id }}/scan/{{ s.id }}/rerun"
+            formmethod="post"
+            title="Создать новый Run для этого уже загруженного скана с текущими настройками"
+          >Пересканировать</button>
+        </td>
       </tr>
       {% endfor %}
       </tbody>
     </table>
     <div class="notice">
-      Будут использованы текущие настройки: {{ settings.sample_count }} samples, top-view {{ settings.topview_resolution_m }} м, source-up {{ settings.source_up }}.
+      Будут использованы текущие настройки: {{ settings.sample_count }} samples,
+      top-view {{ settings.topview_resolution_m }} м,
+      source-up {{ settings.source_up }}.
+      Кнопка «Пересканировать» не загружает файл повторно — она создаёт новый Run для выбранного Scan.
     </div>
     <button class="button primary" type="submit">Запустить выбранные сканы</button>
   </form>
