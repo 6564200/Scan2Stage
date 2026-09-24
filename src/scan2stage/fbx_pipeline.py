@@ -8,6 +8,7 @@ from .scene_io import load_scene
 from .geometry import apply_transform, bounds, canonical_transform
 from .room_geometry import normalize_room
 from .object_candidates import extract_object_candidates
+from .structural_scene import analyze_structural_scene
 from .sampling import sample_mesh_surface
 
 
@@ -36,7 +37,14 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
     part_reports = []
 
     for part, count in zip(scene.parts, allocations):
-        points, normals, colors = sample_mesh_surface(part.vertices, part.triangles, int(count), rng, triangle_uvs=part.triangle_uvs, texture=part.texture)
+        points, normals, colors = sample_mesh_surface(
+            part.vertices,
+            part.triangles,
+            int(count),
+            rng,
+            triangle_uvs=part.triangle_uvs,
+            texture=part.texture,
+        )
         sampled_points.append(apply_transform(points, source_to_meters))
         sampled_normals.append(normals @ rotation.T)
         if colors is None:
@@ -44,7 +52,14 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
         else:
             sampled_colors.append(colors)
         texture_size = [int(part.texture.shape[1]), int(part.texture.shape[0])] if part.texture is not None else None
-        part_reports.append({'name': part.name, 'vertices': int(len(part.vertices)), 'triangles': int(len(part.triangles)), 'has_uv': part.triangle_uvs is not None, 'has_albedo_texture': part.texture is not None, 'texture_size': texture_size})
+        part_reports.append({
+            'name': part.name,
+            'vertices': int(len(part.vertices)),
+            'triangles': int(len(part.triangles)),
+            'has_uv': part.triangle_uvs is not None,
+            'has_albedo_texture': part.texture is not None,
+            'texture_size': texture_size,
+        })
 
     points = np.concatenate(sampled_points, axis=0)
     normals = np.concatenate(sampled_normals, axis=0)
@@ -61,7 +76,7 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
         raise RuntimeError(f'Failed to write {pointcloud_path}')
 
     report = {
-        'schema_version': '0.7',
+        'schema_version': '0.8',
         'input': str(scene.source_container),
         'resolved_mesh': str(scene.path),
         'format': scene.format,
@@ -83,8 +98,17 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
     if room_normalize:
         room_report, room_pcd = normalize_room(pcd, output_dir, source_to_meters)
         report['room_geometry'] = room_report
+
+        # Legacy M4 candidates are kept for compatibility and diagnostics.
         object_report, _ = extract_object_candidates(room_pcd, room_report, output_dir)
         report['object_candidates'] = object_report
+
+        # v2 structural-first analysis deliberately operates on the complete
+        # normalized room cloud. Structural geometry is context/evidence and is
+        # not removed before target hypotheses are generated.
+        semantic_report = analyze_structural_scene(room_pcd, room_report, output_dir)
+        report['structural_scene'] = semantic_report
+
     (output_dir / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     return report
 

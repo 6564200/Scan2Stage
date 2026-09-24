@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scan2stage"
-version = "0.1.0"
-description = "LiDAR point-cloud to Blender scene pipeline for shooting stages"
+version = "0.2.0"
+description = "Structural-first textured 3D scan to practical-shooting stage pipeline"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

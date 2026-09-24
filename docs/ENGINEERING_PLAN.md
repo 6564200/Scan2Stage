@@ -1,257 +1,126 @@
 # Scan2Stage engineering plan
 
-This document converts the product manifest into an implementation order. It is
-based on the current repository rather than the intended final architecture.
-
-## Current baseline
-
-The strongest part of the prototype is the straight-through geometry path:
-
-```text
-ZIP / mesh -> material-aware import -> surface sampling -> Z-up/meters
-  -> floor and rectangle -> conservative structural mask
-  -> voxelized DBSCAN primitives -> JSON diagnostics
-```
-
-The project already has useful boundaries between ingestion, sampling, room
-geometry, and candidate extraction. It also encodes two important safety policies:
-the room is a rectangle and internal planes are not stripped merely because they
-are large.
-
-This is not yet a V1 semantic-scene pipeline. There is no validated catalog API,
-recognition library, confirmation workflow, asset registry, complete scene model,
-or Blender generator. The immediate goal should therefore be to make geometry
-outputs reliable and versioned before adding recognition.
-
-## Audit findings
-
-### P0: correctness and data-loss risks
-
-1. **Floor tilt is not corrected.** Floor detection validates a plane, but room
-   normalization only translates its height. A tilted capture leaves walls
-   non-vertical and makes height clipping, rectangle fitting, and object poses
-   systematically wrong.
-2. **The documented linear-object policy and implementation disagree.** Candidate
-   feature extraction can label a primitive `linear`, but the subsequent
-   second-largest-extent filter rejects every sufficiently thin linear primitive.
-   Fault lines, frame members, and stands can therefore disappear.
-3. **The floor mask can erase floor-mounted semantics.** Every point below the
-   clearance is structural, regardless of local geometry or color. This is risky
-   for fault lines and low bases and should be made explicit in diagnostics before
-   it is made more selective.
-4. **Room fallback can silently fit the wrong space.** When supported opposing
-   walls are unavailable, global trimmed quantiles become room boundaries. A large
-   corridor or neighboring gallery can then determine the result without a clear
-   quality gate.
-
-### P1: ingestion and reproducibility risks
-
-1. ZIP paths are checked, but the implementation extracts the entire archive and
-   has no member-count, uncompressed-size, or compression-ratio limits.
-2. Default scale is selected from the outer CLI suffix. A ZIP containing a legacy
-   FBX receives the ZIP default (`1.0`) rather than the FBX default (`0.01`).
-3. Samples are allocated between mesh parts by triangle count. Parts containing a
-   few large triangles are undersampled relative to parts containing many small
-   triangles; allocation should follow surface area.
-4. Output writes are not consistently checked. A failed room or candidate PLY
-   write can still leave JSON that appears successful.
-5. Randomness is seeded for surface sampling, but RANSAC and DBSCAN reproducibility
-   is not defined or reported.
+This plan reflects the structural-first prototype now present on main.
 
-### P1: contract and testing gaps
+## Current processing baseline
 
-1. `SceneConfig` currently validates little beyond coordinate literals and an
-   untyped object list. It does not represent the documented room, transforms,
-   confidence, confirmation state, variants, or child targets.
-2. `object_catalog.json` is data without a loader or Pydantic validation. Duplicate
-   IDs, invalid dimensions, and unknown child classes are not rejected.
-3. ZIP tests cover the happy path only; traversal, absolute paths, multiple meshes,
-   archive limits, and deterministic selection need tests.
-4. Candidate tests exercise helpers, not the full extraction report. There are no
-   regression fixtures for linear preservation, internal composite structures, or
-   floor-mounted objects.
-5. There is no small, redistributable integration fixture that runs ingestion
-   through candidate extraction without proprietary UGScan data.
+~~~text
+UGScan ZIP/GLB
+ -> sampled colored point cloud
+ -> meters / Z-up
+ -> floor + rectangular room
+ -> legacy conservative object candidates
+ -> multi-height top-view
+ -> structural components + Fault Lines
+ -> shooting-direction prior
+ -> Metric/metal soft hypotheses
+ -> JSON/NPZ diagnostics
+~~~
 
-## Recommended execution order
+The central policy is explicit: structural understanding must not destroy target evidence.
 
-### Phase 1 — establish trustworthy geometry
+## P0 — correctness before classifier sophistication
 
-#### 1.1 Align the floor, not only its offset
+### 1. Full floor rotation
 
-Compute a stable rotation that maps the detected floor normal to `+Z`, apply it
-before height clipping and wall detection, and compose it into `source_to_room`.
-Resolve the antiparallel case and reject implausible tilt rather than guessing.
+The current room path translates detected floor height but still needs a complete rotation that maps the fitted floor normal to +Z.
 
-**Acceptance criteria**
+Acceptance:
+- synthetic tilted rooms normalize floor normal within 1 degree;
+- source-to-room transform includes rotation plus translation;
+- colors and normals survive.
 
-- synthetic rooms tilted around two axes normalize to a floor normal within 1° of
-  `+Z`;
-- recovered wall positions stay within 30–50 mm on synthetic fixtures;
-- `source_to_room` maps original source points to the persisted cloud;
-- colors and normals survive the transform.
+### 2. Wall protrusion depth profiles
 
-#### 1.2 Make candidate retention policy internally consistent
+Implement wall-local depth profiles for wheel-cover boxes. Component segmentation alone is insufficient because protrusions merge with walls.
 
-Separate shape labeling from retention. Preserve meaningful linear primitives
-using length, point support, and optionally floor-contact rules instead of applying
-the planar two-axis threshold to all shapes. Add reason codes and counts for every
-rejection.
+Acceptance:
+- low attached bumps are classified as wall_protrusion;
+- height is reported;
+- only bump footprint is excluded from target hypotheses;
+- gaps between bumps remain searchable.
 
-**Acceptance criteria**
+### 3. Local Metric plane/silhouette verifier
 
-- `2.0 x 0.05 x 0.05 m` frame/fault-line fixtures survive;
-- `0.08 x 0.06 x 0.03 m` noise fixtures are rejected;
-- thin `0.60 x 0.45 x 0.01 m` targets survive;
-- JSON reports distinguish size, support, structural, and outside-room rejection.
+The current local scorer is deliberately permissive. Add explicit plane RANSAC and partial template projection using the clean 0.414 x 0.535 m target face.
 
-#### 1.3 Add room-fit quality gates
+Acceptance:
+- partially occluded target remains detectable with at least 35-45% visible face;
+- wall/decor patches with wrong orientation are rejected;
+- B/S classification is performed only after generic target detection.
 
-Report support per boundary, fallback use, plausible dimension ranges, and an
-overall quality/confidence state. Low-quality fits should stop semantic extraction
-or require review instead of silently cropping possible objects.
+### 4. Bullet-trap variants
 
-**Acceptance criteria**
+Measure and encode all three trap variants. Recover front plane/local frame and identify the rear trap.
 
-- corridor-heavy and missing-wall fixtures produce an explicit `review` result;
-- four well-supported walls produce `accepted`;
-- object extraction refuses an invalid rectangle unless an explicit override is
-  supplied.
+Acceptance:
+- each measured variant recognized on validation scans;
+- metal search ROI generated from rear trap front;
+- trap-facing direction agrees with stage shooting direction.
 
-### Phase 2 — harden ingestion and outputs
+## P1 — Fault Lines and stage topology
 
-#### 2.1 Stream and limit ZIP ingestion
+Upgrade red floor components to linked polylines and, where possible, a shooting-area polygon.
 
-Inspect central-directory metadata, reject unsafe or ambiguous archives, enforce
-configurable member/size/ratio limits, and extract only the selected mesh plus any
-external resources required by glTF. Prefer the canonical UGScan GLB name when it
-is present, while keeping deterministic ambiguity errors.
+Acceptance:
+- red features above the floor band are rejected;
+- disconnected noise is not promoted;
+- line segments preserve corners and topology.
 
-**Acceptance criteria**
+## P1 — target subtypes
 
-- tests cover traversal, absolute paths, symlink-like entries, too many members,
-  oversized content, suspicious compression ratios, and multiple GLBs;
-- a normal single-GLB UGScan archive remains a one-command input;
-- rejected archives write no partial output.
+Metal:
+- Popper vs Mini Popper;
+- Plates / Plates quad;
+- combine rear proximity, height, silhouette, orientation and blue color.
 
-#### 2.2 Resolve format before choosing defaults
+Cardboard:
+- generic IPSC Metric Target first;
+- B/S via installation height and context.
 
-Move unit-scale selection after container resolution. Preserve explicit
-`--unit-scale` as the highest-priority override and record both the selected rule
-and resolved format in `report.json`.
+## P1 — ingestion/reproducibility work retained from the earlier audit
 
-#### 2.3 Allocate surface samples by area
+- bounded/streamed ZIP resolver;
+- choose default units after inner mesh format is resolved;
+- allocate surface samples by triangle area, not triangle count;
+- transactional outputs;
+- deterministic seeds/parameters in run manifest;
+- explicit room-fit quality gates.
 
-Calculate each part's triangle area after unit conversion and allocate the global
-budget proportionally, with a documented minimum for non-empty parts. Test
-determinism and exact/near-exact budget handling.
+## P2 — semantic contracts
 
-#### 2.4 Make outputs transactional
+Replace untyped scene object dictionaries with typed Pydantic models for transform, evidence scores, confidence/review state, support/context links, polylines and object variants.
 
-Check every serializer return value, write to a temporary run directory, and
-publish the completed run atomically. Include pipeline version, parameters, seed,
-timings, and artifact-relative paths in one manifest.
+Add validation for config/object_catalog.json including unique IDs and reference integrity.
 
-### Phase 3 — define semantic contracts before recognition
+## P2 — validation dataset
 
-#### 3.1 Implement catalog models and loader
+Before learned detection:
+- label representative large maps;
+- record all real targets, including occluded targets;
+- record hard negatives: decor, wall protrusions, wall ends and blue non-targets;
+- measure proposal recall and final precision separately.
 
-Add typed models for classes, variants, dimension ranges, placement, anchors,
-allowed children, and recognition priority. Validate uniqueness and references.
-Keep exact bullet-trap dimensions nullable until measured; do not invent them.
+Initial goals:
+- Metric Target recall > 90%;
+- Popper/metal recall > 95%.
 
-#### 3.2 Implement a real scene schema
+## P3 — performance
 
-Replace `list[dict]` with typed room, transform, object, child-target, confidence,
-and confirmation models. Choose one naming/casing convention for coordinate axes
-and one quaternion order, then add round-trip and schema-version tests.
+Keep the coarse-to-fine strategy:
+- 4-5 cm top-view structural pass;
+- 1-2 cm refinement only around hypotheses;
+- spatial tiling;
+- parallel local-patch verification;
+- independent Fault Line, texture and structural branches.
 
-#### 3.3 Add a CLI confirmation artifact
+CPU/RAM are the current priority. GPU acceleration is reserved for image segmentation/detection or learned models where profiling shows a benefit.
 
-Before building a GUI, support a review JSON workflow:
+## P4 — clean assets and Blender
 
-```text
-object_candidates.json -> review template -> user edits/confirmation
-  -> validated recognized_objects.json -> scene_config.json
-```
-
-Never overwrite raw candidate evidence. Store label provenance, timestamp, source
-candidate IDs, and whether a transform was edited.
-
-### Phase 4 — recognition without premature ML
-
-1. Match candidates to catalog priors by robust dimensions, shape, placement, and
-   floor contact; always retain an `unknown` option.
-2. Add a recognition-exemplar metadata schema and immutable dataset layout. Do not
-   place clean assets in this store.
-3. Implement primitive relationship graphs (distance, coplanarity, parallelism,
-   contact, shared bounding rectangle) and composite hypotheses for mesh walls,
-   frames, and stands.
-4. Recognize the three bullet-trap variants once measured dimensions are available;
-   estimate their front plane and local coordinate system.
-5. Only then add RGB/texture target detection inside the trap's front ROI and map
-   detections back to trap-local 3D coordinates.
-
-Confidence thresholds should be calibrated from labeled validation scans, not
-hard-coded as meaningful probabilities before a dataset exists.
-
-### Phase 5 — clean assets and Blender
-
-1. Validate an asset registry mapping `class_id`/`variant_id` to canonical `.blend`
-   and `.glb` files, front axis, anchor, dimensions, and scale policy.
-2. Generate a deterministic preview (top view or lightweight GLB) from
-   `scene_config.json` before depending on Blender.
-3. Add a headless `bpy` generator behind an optional integration boundary. Unit
-   tests must not require Blender; Blender smoke tests should run separately.
-4. Build PySide6 correction UI only after the review JSON operations and schema are
-   stable, so the GUI remains a client of the same contracts.
-
-## Proposed next three pull requests
-
-### PR 1: floor rotation and transform consistency
-
-- add rotation-to-Z utility and tilted synthetic-room tests;
-- rotate points and normals before clipping;
-- persist and test the complete homogeneous transform;
-- add explicit floor-fit diagnostics.
-
-### PR 2: shape-aware candidate retention
-
-- replace the universal two-axis cutoff with planar/volumetric and linear policies;
-- preserve long thin primitives;
-- report rejection reason counters;
-- add synthetic low-floor and internal-frame regression tests.
-
-### PR 3: safe bounded ZIP resolver
-
-- split archive inspection/selection from extraction;
-- add resource limits and deterministic selection;
-- choose scale from the resolved mesh format;
-- add adversarial ZIP tests.
-
-These three changes reduce silent geometry corruption and object loss before the
-project accumulates APIs or labeled data on top of unstable inputs.
-
-## Data and measurement needed from the project owner
-
-- exact dimensions and installation anchors for all three bullet-trap variants;
-- a written definition of the start position/front direction in a completed stage;
-- redistribution-safe synthetic or commissioned integration fixtures;
-- several representative failure scans: corridor leakage, tilt, partial walls,
-  mesh partitions, low fault lines, and target/trap configurations;
-- explicit UGScan export/commercial-use confirmation before scans are stored in a
-  shared or public dataset.
-
-## Definition of ready for recognition work
-
-Recognition work should start when all of the following hold:
-
-- room normalization passes tilted, corridor, and missing-wall regression suites;
-- candidate recall is measured on a small manually labeled validation set;
-- every discarded point/candidate has an auditable reason;
-- catalog and scene files are schema-validated and versioned;
-- source-to-room transforms round-trip within numerical tolerance;
-- a safe, redistributable end-to-end fixture runs in CI.
-
-Until then, geometry reliability and candidate recall have higher value than adding
-classifiers, ICP, a desktop UI, or Blender automation.
+Once semantic outputs are stable:
+- asset registry with anchor/front/up metadata;
+- deterministic asset replacement;
+- preview GLB/top-view;
+- headless Blender scene generator;
+- correction UI as a client of the same scene schema.

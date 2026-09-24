@@ -1,5 +1,5 @@
 {
-  "schema_version": "0.1",
+  "schema_version": "0.2",
   "coordinate_convention": {
     "units": "meters",
     "up": "+Z",
@@ -14,69 +14,95 @@
       "recognition_priority": "high",
       "can_host_targets": true,
       "variants": [
-        {"variant_id": "bullet_trap_size_a", "dimensions_m": null},
-        {"variant_id": "bullet_trap_size_b", "dimensions_m": null},
-        {"variant_id": "bullet_trap_size_c", "dimensions_m": null}
+        {
+          "variant_id": "bullet_trap_size_a",
+          "dimensions_m": null
+        },
+        {
+          "variant_id": "bullet_trap_size_b",
+          "dimensions_m": null
+        },
+        {
+          "variant_id": "bullet_trap_size_c",
+          "dimensions_m": null
+        }
+      ]
+    },
+    {
+      "class_id": "ipsc_metric_target",
+      "display_name": "IPSC Metric Target (generic)",
+      "shape_family": "planar",
+      "nominal_face_dimensions_m": [
+        0.414,
+        null,
+        0.535
       ],
-      "children": ["cardboard_target", "mini_target"]
+      "placement": "stage",
+      "faces_shooter": true,
+      "subtypes": [
+        "ipsc_metric_target_b",
+        "ipsc_metric_target_s"
+      ],
+      "partial_observation_allowed": true
     },
     {
-      "class_id": "cardboard_target",
-      "display_name": "Cardboard target",
+      "class_id": "ipsc_metric_target_b",
+      "display_name": "IPSC Metric Target B",
       "shape_family": "planar",
-      "placement": "child_of_bullet_trap",
-      "standalone_expected": false
+      "parent_class": "ipsc_metric_target",
+      "placement": "stage",
+      "faces_shooter": true
     },
     {
-      "class_id": "mini_target",
-      "display_name": "Mini target",
+      "class_id": "ipsc_metric_target_s",
+      "display_name": "IPSC Metric Target S",
       "shape_family": "planar",
-      "placement": "child_of_bullet_trap",
-      "standalone_expected": false
+      "parent_class": "ipsc_metric_target",
+      "placement": "stage",
+      "faces_shooter": true
     },
     {
       "class_id": "popper",
-      "display_name": "Popper",
+      "display_name": "IPSC Popper",
       "shape_family": "planar_or_linear",
-      "placement": "floor"
+      "placement": "rear_bullet_trap_zone",
+      "faces_shooter": true,
+      "color_prior": "blue"
     },
     {
       "class_id": "mini_popper",
-      "display_name": "Mini popper",
+      "display_name": "IPSC Mini Popper",
       "shape_family": "planar_or_linear",
-      "placement": "floor"
+      "placement": "rear_bullet_trap_zone",
+      "faces_shooter": true,
+      "color_prior": "blue"
     },
     {
-      "class_id": "steel_plate",
-      "display_name": "Steel plate",
-      "shape_family": "planar"
-    },
-    {
-      "class_id": "mesh_wall_1000x2000",
-      "display_name": "Mesh wall 1000x2000",
+      "class_id": "plates_quad",
+      "display_name": "IPSC Plates quad",
       "shape_family": "composite_planar",
-      "nominal_dimensions_m": [1.0, null, 2.0],
-      "keep_even_if_planar": true
+      "placement": "rear_bullet_trap_zone",
+      "faces_shooter": true,
+      "color_prior": "blue"
     },
     {
-      "class_id": "mesh_wall_2000x2000",
-      "display_name": "Mesh wall 2000x2000",
-      "shape_family": "composite_planar",
-      "nominal_dimensions_m": [2.0, null, 2.0],
-      "keep_even_if_planar": true
+      "class_id": "metal_target",
+      "display_name": "Metal target (generic)",
+      "shape_family": "planar_or_linear",
+      "placement": "rear_bullet_trap_zone",
+      "faces_shooter": true
     },
     {
-      "class_id": "duel_partition",
-      "display_name": "Duel partition",
-      "shape_family": "planar",
-      "nominal_height_m": 2.5,
-      "keep_even_if_planar": true
-    },
-    {
-      "class_id": "port_wall",
-      "display_name": "Port wall",
+      "class_id": "partition",
+      "display_name": "Partition / wall",
       "shape_family": "composite_planar",
       "keep_even_if_planar": true
+    },
+    {
+      "class_id": "wall_protrusion",
+      "display_name": "Low wall / wheel-cover protrusion",
+      "shape_family": "volumetric",
+      "placement": "attached_to_wall"
     },
     {
       "class_id": "barrel",
@@ -84,15 +110,22 @@
       "shape_family": "volumetric"
     },
     {
-      "class_id": "fault_line",
-      "display_name": "Fault line",
-      "shape_family": "linear",
-      "placement": "floor"
-    },
-    {
       "class_id": "decoration",
       "display_name": "Decoration / obstacle",
       "shape_family": "any"
+    },
+    {
+      "class_id": "fault_line",
+      "display_name": "Fault Line",
+      "shape_family": "linear",
+      "placement": "floor",
+      "color_prior": "red"
+    },
+    {
+      "class_id": "unknown_structure",
+      "display_name": "Unknown structure",
+      "shape_family": "any",
+      "requires_user_confirmation": true
     },
     {
       "class_id": "unknown",

@@ -2,107 +2,113 @@
 
 ## Recognition policy
 
-Candidates are not automatically deleted because they are planar. Internal gallery partitions, mesh walls, port walls, targets and decorations may all be planar.
+The scene model separates observation, hypothesis, and clean output asset. Structural geometry is evidence and is never deleted merely because it matches a wall, partition, or trap.
 
-Initial operation is human-in-the-loop:
+Initial operation remains human-in-the-loop:
 
-1. detect candidate;
-2. compare with known catalog/recognition exemplars;
-3. assign confidence;
-4. ask user when confidence is insufficient;
-5. store the confirmed label as a future recognition exemplar.
+1. generate hypotheses with high recall;
+2. accumulate geometry, top-view, orientation, color and context evidence;
+3. classify when evidence is sufficient;
+4. retain uncertain hypotheses for review;
+5. store confirmed labels as future validation/training examples.
+
+## Coordinate convention
+
+- units: meters;
+- runtime scene: Z up;
+- top view: XY;
+- clean assets: +Y front unless metadata overrides it;
+- transforms explicitly state quaternion order.
+
+## Scene graph example
+
+~~~json
+{
+  "object_id": "target_014",
+  "class_id": "ipsc_metric_target_b",
+  "state": "LIKELY",
+  "confidence": 0.77,
+  "transform": {
+    "position_m": [1.2, 8.4, 1.15],
+    "rotation_quaternion_xyzw": [0, 0, 0, 1],
+    "scale": [1, 1, 1]
+  },
+  "context": {
+    "faces_shooter": true,
+    "support_object_id": "trap_003",
+    "shooting_zone_id": "zone_01"
+  },
+  "evidence": {
+    "geometry": 0.84,
+    "topview": 0.65,
+    "orientation": 0.94,
+    "color": 0.30,
+    "context": 0.88,
+    "partial_observation": true
+  }
+}
+~~~
+
+## Key semantic classes
+
+Structural:
+- bullet_trap
+- partition
+- barrel
+- decoration
+- wall_protrusion
+- unknown_structure
+
+Targets:
+- ipsc_metric_target (generic proposal)
+- ipsc_metric_target_b
+- ipsc_metric_target_s
+- popper
+- mini_popper
+- plates_quad
+- metal_target (generic proposal)
+
+Floor semantics:
+- fault_line
+
+## Domain constraints
+
+Constraints contribute to confidence; they must not silently erase evidence.
+
+- All targets face the athlete / firing side.
+- Poppers and steel are expected adjacent to the rear bullet trap.
+- Cardboard targets can be installed at different distances.
+- Cardboard targets may appear between low wall/wheel-cover protrusions.
+- Fault Lines lie close to the floor and define shooting-area boundaries.
 
 ## Clean asset library
 
 Recognition exemplars and output assets are separate datasets.
 
-Recommended layout:
-
-```text
+~~~text
 assets/
   <class_id>/
     <asset_id>.blend
     <asset_id>.glb
     metadata.json
-```
+~~~
 
-Asset convention:
+## Fault Lines
 
-- units: meters;
-- Z up;
-- +Y front;
-- origin: installation anchor;
-- `.blend` is the editable master;
-- `.glb` is the portable clean asset.
+Fault Lines should ultimately be represented as polylines rather than boxes.
 
-Example metadata:
-
-```json
+~~~json
 {
-  "asset_id": "popper_standard_v1",
-  "class_id": "popper",
-  "blend": "popper_standard_v1.blend",
-  "glb": "popper_standard_v1.glb",
-  "front_axis": "+Y",
-  "up_axis": "+Z",
-  "origin": "bottom_center",
-  "allow_uniform_scale": false
+  "object_id": "fault_line_01",
+  "class_id": "fault_line",
+  "polyline_xy_m": [[-1.2, 2.0], [0.5, 2.0], [1.1, 2.8]],
+  "width_m": 0.05,
+  "confidence": 0.91
 }
-```
+~~~
 
-## Scene object
+## Bullet traps and target relations
 
-```json
-{
-  "object_id": "obj_001",
-  "class_id": "bullet_trap",
-  "variant_id": "bullet_trap_size_a",
-  "asset_id": "bullet_trap_size_a_clean",
-  "confidence": 0.92,
-  "user_confirmed": true,
-  "transform": {
-    "position_m": [1.0, 4.0, 0.0],
-    "rotation_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
-    "scale": [1.0, 1.0, 1.0]
-  },
-  "children": []
-}
-```
+Targets can reference a recognized bullet trap through context.support_object_id, but cardboard targets are not globally required to be children of a bullet trap. They may be installed at different distances in the stage.
 
-## Bullet trap and targets
-
-Targets are modeled as children of a recognized bullet trap, not as expected standalone scene objects.
-
-```json
-{
-  "object_id": "trap_003",
-  "class_id": "bullet_trap",
-  "variant_id": "bullet_trap_size_b",
-  "asset_id": "bullet_trap_size_b_clean",
-  "transform": {
-    "position_m": [0.5, 8.2, 0.0],
-    "rotation_quaternion_xyzw": [0.0, 0.0, 0.0, 1.0],
-    "scale": [1.0, 1.0, 1.0]
-  },
-  "children": [
-    {
-      "object_id": "target_003_01",
-      "class_id": "cardboard_target",
-      "asset_id": "cardboard_target_clean",
-      "parent_id": "trap_003",
-      "local_position_m": [-0.22, 0.0, 0.25],
-      "local_rotation_deg": 0.0,
-      "confidence": 0.84,
-      "user_confirmed": false
-    }
-  ]
-}
-```
-
-This allows target type, count and arrangement to vary independently from the three large bullet-trap variants.
-
-## Size filtering
-
-Do not reject a candidate just because one dimension is below 0.10 m. Thin targets and panels are valid.
-
-Current safe filter: reject only when the second-largest robust extent is below 0.10 m. This preserves planar and linear-looking structures for later grouping/recognition.
+The rear bullet trap remains a strong context anchor for metal targets.

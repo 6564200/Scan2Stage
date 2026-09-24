@@ -1,65 +1,71 @@
 # Scan2Stage
 
-Scan2Stage converts UGScan textured meshes (or legacy point clouds) into structured
-shooting-stage data and, in later milestones, clean Blender scenes.
+Scan2Stage converts textured UGScan meshes (plus legacy point clouds) into a structured practical-shooting stage representation and, in later milestones, clean Blender scenes.
 
-## Current milestone
+## Current state
 
-The repository currently contains the M1/M2 ingestion foundation, an M3 room
-normalization prototype, and active M4 object-candidate extraction:
+The repository contains the ingestion/normalization foundation plus an active structural-first detector:
 
-- UGScan ZIP and GLB/glTF ingestion, including texture-aware surface sampling;
+- UGScan ZIP and GLB/glTF ingestion with texture-aware surface sampling;
 - legacy FBX/OBJ and point-cloud input paths;
 - conversion to meters and canonical Z-up coordinates;
-- floor detection, working-height clipping, and rectangular room fitting;
-- conservative candidate extraction that keeps internal planar structures;
-- JSON diagnostics, pytest coverage, Colab notebooks, and a Docker boundary.
+- floor detection, working-volume clipping and rectangular room fitting;
+- conservative M4 DBSCAN/PCA candidates retained for compatibility;
+- multi-height top-view rasterization (occupancy, density and height layers);
+- structural components (walls/partitions/large and compact structures);
+- red floor Fault Line proposals;
+- shooting-direction prior derived from room geometry and rear structural support;
+- generic IPSC Metric Target hypotheses using local 3D planarity, size, orientation and partial-observation tolerance;
+- rear-zone metal-target proposals;
+- JSON diagnostics plus compressed top-view layers for later visualization.
 
-The pipeline is intentionally conservative: an unknown candidate is preferable to
-silently deleting a real target, partition, mesh wall, or frame.
+The detector is intentionally recall-oriented. Structural geometry is treated as context/evidence, not a destructive mask: a target may overlap a wall, partition, bullet trap or decoration in the scan.
+
+## Domain rules encoded as priors
+
+- Targets face the athlete / firing side.
+- Poppers and steel are expected close to the rear bullet trap.
+- Cardboard targets may be at different distances.
+- Cardboard targets can appear between low wall/wheel-cover protrusions.
+- Fault Lines are low, elongated red floor features that bound the shooting area.
+
+## Mesh outputs
+
+sampled_colored.ply, room_normalized.ply, room_geometry.json, object_candidates.json, topview_layers.npz, structural_scene.json and report.json.
 
 ## Local install
 
-```bash
+~~~bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 pytest -q
-```
+~~~
 
 ## CLI
 
-For the production mesh path:
+~~~bash
+scan2stage scan.zip --output-dir outputs/scan --samples 300000 --source-up y
+~~~
 
-```bash
-scan2stage scan.zip \
-  --output-dir outputs/scan \
-  --samples 300000 \
-  --source-up y
-```
+## Architecture
 
-The legacy point-cloud path remains available:
+~~~text
+textured mesh
+  -> surface sampling
+  -> meters / Z-up
+  -> floor + room normalization
+  -> multi-height top-view
+  -> structural scene understanding
+  -> shooting-direction/context priors
+  -> soft target hypotheses
+  -> local 3D verification
+  -> scene graph / review
+  -> clean asset replacement / Blender
+~~~
 
-```bash
-scan2stage data/input.ply \
-  --output outputs/processed.ply \
-  --stats outputs/stats.json \
-  --voxel 0.02
-```
+See ROADMAP.md, docs/STRUCTURAL_DETECTOR.md, docs/SCENE_SCHEMA.md, docs/ENGINEERING_PLAN.md and docs/NEWCOMER_GUIDE.md.
 
-## Colab pilot
+## Production principle
 
-Open `notebooks/01_colab_pilot.ipynb` in Google Colab. The notebook clones this repository, installs the package, accepts a PLY upload, executes the CLI and runs tests.
-
-For repeatable datasets, use a GCS bucket and copy files in/out from notebook cells. GCP access remains orchestration-only; core algorithms do not depend on Google APIs.
-
-## Production migration principle
-
-Do not put processing logic into notebooks. Everything that affects a result belongs under `src/scan2stage` and is exercised by tests. Colab only invokes the same CLI that will later run on a production workstation/server/container.
-
-## Where to start
-
-New contributors should read [`docs/NEWCOMER_GUIDE.md`](docs/NEWCOMER_GUIDE.md)
-for the end-to-end data flow, module map, invariants, and a suggested reading
-order. See also `docs/PILOT_ARCHITECTURE.md`, `docs/SCENE_SCHEMA.md`, and
-`ROADMAP.md`.
+Notebooks remain orchestration/test surfaces only. Any logic that changes a result belongs under src/scan2stage and must be testable outside Colab.
