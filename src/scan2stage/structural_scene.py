@@ -617,7 +617,8 @@ def analyze_structural_scene(
             "partial_target_observations_allowed": True,
             "metric_subtype_after_generic_detection": True,
             "metal_expected_near_rear_bullet_trap": True,
-            "targets_expected_to_face_shooter": True,\n            "decorative_partitions_invalid_in_rear_popper_zone": True,
+            "targets_expected_to_face_shooter": True,
+            "decorative_partitions_invalid_in_rear_popper_zone": True,
         },
         "topview": {
             "origin_xy_m": topview["origin_xy_m"],
