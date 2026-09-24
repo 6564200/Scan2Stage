@@ -10,6 +10,19 @@ else
   python -m pip install 'open3d>=0.19,<0.20'
 fi
 
-python -m pip install 'numpy>=1.24' 'pydantic>=2.6' 'pytest>=8'
+python -m pip install   'numpy>=1.24'   'pydantic>=2.6'   'pytest>=8'   'matplotlib>=3.8'   'pandas>=2.0'
+
 python -m pip install -e . --no-deps
-python -c 'import sys, open3d as o3d, scan2stage; print("Python:", sys.version); print("Open3D:", o3d.__version__); print("Scan2Stage:", scan2stage.__version__)'
+
+python - <<'PY'
+import sys
+import open3d as o3d
+import scan2stage
+import matplotlib
+import pandas
+print("Python:", sys.version)
+print("Open3D:", o3d.__version__)
+print("Scan2Stage:", scan2stage.__version__)
+print("Matplotlib:", matplotlib.__version__)
+print("Pandas:", pandas.__version__)
+PY
