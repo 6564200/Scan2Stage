@@ -12,7 +12,16 @@ from .structural_scene import analyze_structural_scene
 from .sampling import sample_mesh_surface
 
 
-def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', seed=42, unit_scale=1.0, room_normalize=True):
+def process_mesh(
+    input_path,
+    output_dir,
+    sample_count=300000,
+    source_up='y',
+    seed=42,
+    unit_scale=1.0,
+    room_normalize=True,
+    topview_resolution_m=0.05,
+):
     import open3d as o3d
 
     scene = load_scene(input_path)
@@ -76,7 +85,7 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
         raise RuntimeError(f'Failed to write {pointcloud_path}')
 
     report = {
-        'schema_version': '0.8',
+        'schema_version': '0.9',
         'input': str(scene.source_container),
         'resolved_mesh': str(scene.path),
         'format': scene.format,
@@ -98,20 +107,37 @@ def process_mesh(input_path, output_dir, sample_count=300000, source_up='y', see
     if room_normalize:
         room_report, room_pcd = normalize_room(pcd, output_dir, source_to_meters)
         report['room_geometry'] = room_report
-
-        # Legacy M4 candidates are kept for compatibility and diagnostics.
         object_report, _ = extract_object_candidates(room_pcd, room_report, output_dir)
         report['object_candidates'] = object_report
-
-        # v2 structural-first analysis deliberately operates on the complete
-        # normalized room cloud. Structural geometry is context/evidence and is
-        # not removed before target hypotheses are generated.
-        semantic_report = analyze_structural_scene(room_pcd, room_report, output_dir)
+        semantic_report = analyze_structural_scene(
+            room_pcd,
+            room_report,
+            output_dir,
+            resolution_m=topview_resolution_m,
+        )
         report['structural_scene'] = semantic_report
 
     (output_dir / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     return report
 
 
-def process_fbx(input_path, output_dir, sample_count=300000, source_up='y', seed=42, unit_scale=0.01, room_normalize=True):
-    return process_mesh(input_path, output_dir, sample_count, source_up, seed, unit_scale, room_normalize)
+def process_fbx(
+    input_path,
+    output_dir,
+    sample_count=300000,
+    source_up='y',
+    seed=42,
+    unit_scale=0.01,
+    room_normalize=True,
+    topview_resolution_m=0.05,
+):
+    return process_mesh(
+        input_path,
+        output_dir,
+        sample_count,
+        source_up,
+        seed,
+        unit_scale,
+        room_normalize,
+        topview_resolution_m,
+    )

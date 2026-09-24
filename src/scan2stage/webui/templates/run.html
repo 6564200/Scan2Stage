@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run.id }} — Scan2Stage{% endblock %}
+{% block head %}
+{% if run.status in ["queued", "running"] %}
+<meta http-equiv="refresh" content="3">
+{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Run {{ run.id }}</h1>
+<div class="grid two">
+<section class="card">
+  <h2>Статус</h2>
+  <p><span class="status {{ run.status }}">{{ run.status }}</span></p>
+  <div class="progress"><div style="width: {{ run.progress }}%"></div></div>
+  <p><strong>{{ run.progress }}%</strong> — {{ run.message }}</p>
+  <p class="muted">Страница обновляется каждые 3 секунды во время работы.</p>
+</section>
+<section class="card">
+  <h2>Сканы</h2>
+  <ul>
+  {% for s in scans %}<li>{{ s.original_name }}</li>{% endfor %}
+  </ul>
+</section>
+</div>
+
+<div class="actions">
+  <a class="button" href="/logs/{{ run.id }}">Логи</a>
+  {% if run.status == "completed" %}
+  <a class="button primary" href="/results/{{ run.id }}">Результаты</a>
+  {% endif %}
+</div>
+{% endblock %}

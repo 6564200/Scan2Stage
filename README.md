@@ -1,71 +1,129 @@
 # Scan2Stage
 
-Scan2Stage converts textured UGScan meshes (plus legacy point clouds) into a structured practical-shooting stage representation and, in later milestones, clean Blender scenes.
+Scan2Stage is a local-first Windows application that converts textured 3D scans of a practical-shooting gallery into a structured semantic stage representation and, in later milestones, a clean GLB/FBX/Blender scene.
 
-## Current state
+## Current direction
 
-The repository contains the ingestion/normalization foundation plus an active structural-first detector:
-
-- UGScan ZIP and GLB/glTF ingestion with texture-aware surface sampling;
-- legacy FBX/OBJ and point-cloud input paths;
-- conversion to meters and canonical Z-up coordinates;
-- floor detection, working-volume clipping and rectangular room fitting;
-- conservative M4 DBSCAN/PCA candidates retained for compatibility;
-- multi-height top-view rasterization (occupancy, density and height layers);
-- structural components (walls/partitions/large and compact structures);
-- red floor Fault Line proposals;
-- shooting-direction prior derived from room geometry and rear structural support;
-- generic IPSC Metric Target hypotheses using local 3D planarity, size, orientation and partial-observation tolerance;
-- rear-zone metal-target proposals;
-- JSON diagnostics plus compressed top-view layers for later visualization.
-
-The detector is intentionally recall-oriented. Structural geometry is treated as context/evidence, not a destructive mask: a target may overlap a wall, partition, bullet trap or decoration in the scan.
-
-## Domain rules encoded as priors
-
-- Targets face the athlete / firing side.
-- Poppers and steel are expected close to the rear bullet trap.
-- Cardboard targets may be at different distances.
-- Cardboard targets can appear between low wall/wheel-cover protrusions.
-- Fault Lines are low, elongated red floor features that bound the shooting area.
-
-## Mesh outputs
-
-sampled_colored.ply, room_normalized.ply, room_geometry.json, object_candidates.json, topview_layers.npz, structural_scene.json and report.json.
-
-## Local install
-
-~~~bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-pytest -q
-~~~
-
-## CLI
-
-~~~bash
-scan2stage scan.zip --output-dir outputs/scan --samples 300000 --source-up y
-~~~
-
-## Architecture
+The primary runtime is now a local Windows 10 workstation:
 
 ~~~text
-textured mesh
-  -> surface sampling
-  -> meters / Z-up
-  -> floor + room normalization
-  -> multi-height top-view
-  -> structural scene understanding
-  -> shooting-direction/context priors
-  -> soft target hypotheses
-  -> local 3D verification
-  -> scene graph / review
-  -> clean asset replacement / Blender
+browser UI
+  -> FastAPI local server
+  -> SQLite project metadata
+  -> immutable source scan storage
+  -> worker process
+  -> structural-first detector
+  -> semantic map / reports
+  -> future clean-scene GLB/FBX exporter
 ~~~
 
-See ROADMAP.md, docs/STRUCTURAL_DETECTOR.md, docs/SCENE_SCHEMA.md, docs/ENGINEERING_PLAN.md and docs/NEWCOMER_GUIDE.md.
+Colab notebooks are no longer part of the supported workflow.
 
-## Production principle
+## Local UI
 
-Notebooks remain orchestration/test surfaces only. Any logic that changes a result belongs under src/scan2stage and must be testable outside Colab.
+Install on Windows 10 using:
+
+~~~bat
+scripts\setup_windows.bat
+~~~
+
+Start:
+
+~~~bat
+scripts\start_windows.bat
+~~~
+
+Then open:
+
+~~~text
+http://127.0.0.1:8765
+~~~
+
+Full setup instructions: WINDOWS_LOCAL_SETUP.md.
+
+## UI pages
+
+- Инструкция — short workflow and storage location;
+- Загрузка — create a Gallery and upload one or multiple scans;
+- Gallery — select scans and start processing;
+- Ход выполнения — progress and status history;
+- Результаты — semantic PNG and generated artifacts;
+- Логи — worker output and errors;
+- Настройки — processing parameters with explanations.
+
+## Persistent data model
+
+One Gallery can contain multiple scans. Every processing Run records a settings snapshot and selected Scan IDs. Source files are immutable and results are versioned per Run.
+
+Default local data root:
+
+~~~text
+%USERPROFILE%\Scan2StageData
+~~~
+
+See docs/LOCAL_ARCHITECTURE.md.
+
+## Current detector
+
+The structural-first pipeline currently includes:
+
+- UGScan ZIP and GLB/glTF ingestion;
+- legacy FBX/OBJ ingestion;
+- texture-aware surface sampling;
+- conversion to meters and canonical Z-up;
+- floor/room normalization;
+- conservative candidate extraction;
+- multi-height top-view;
+- structural components;
+- Fault Line proposals from low red geometry;
+- shooting-direction prior;
+- generic IPSC Metric Target proposals with partial-observation tolerance;
+- rear-zone metal proposals;
+- semantic top-view PNG renderer.
+
+Structural geometry is context/evidence, not a destructive mask.
+
+## Multi-scan
+
+The application can already store several scans for one Gallery and include several scans in one Run. They are currently processed independently.
+
+Automatic registration/fusion is not yet implemented. It will use explicit transforms and provenance instead of blindly merging point clouds.
+
+## Outputs
+
+Per processed scan:
+
+~~~text
+sampled_colored.ply
+room_normalized.ply
+room_geometry.json
+object_candidates.json
+structural_scene.json
+topview_layers.npz
+semantic_topview.png
+report.json
+run_manifest.json
+~~~
+
+result.glb and result.fbx will appear only when the clean-scene exporter is implemented.
+
+## Development
+
+~~~bat
+py -3.11 -m venv .venv
+.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.venv\Scripts\python.exe -m pytest -q
+~~~
+
+CLI remains available:
+
+~~~bat
+.venv\Scripts\scan2stage.exe scan.glb --output-dir outputs\test --samples 300000 --source-up y
+~~~
+
+Architecture and roadmap:
+
+- docs/LOCAL_ARCHITECTURE.md
+- docs/STRUCTURAL_DETECTOR.md
+- docs/SCENE_SCHEMA.md
+- ROADMAP.md

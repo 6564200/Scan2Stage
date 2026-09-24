@@ -1,0 +1,38 @@
+:root{
+  font-family: Inter, Segoe UI, Arial, sans-serif;
+  color:#1b1f23;
+  background:#f5f6f8;
+}
+*{box-sizing:border-box}
+body{margin:0}
+a{color:#1459a6;text-decoration:none}
+.topbar{height:58px;background:#111827;color:white;display:flex;align-items:center;justify-content:space-between;padding:0 28px}
+.topbar a{color:white}
+.brand{font-weight:700;font-size:20px}
+nav{display:flex;gap:22px;font-size:14px}
+.container{max-width:1180px;margin:0 auto;padding:30px 24px 60px}
+.hero{padding:20px 0 32px}
+.hero h1{font-size:42px;margin:0 0 8px}
+.card{background:white;border:1px solid #e2e5e9;border-radius:10px;padding:22px;margin-bottom:20px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.grid.two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.actions,.downloads{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.button{display:inline-block;border:1px solid #c8ced6;background:white;border-radius:7px;padding:9px 14px;color:#1b1f23;cursor:pointer}
+.button.primary{background:#1459a6;border-color:#1459a6;color:white}
+.button.small{font-size:13px;padding:6px 10px}
+.form{max-width:760px}
+.form label{display:block;font-weight:600;margin-bottom:18px}
+.form input,.form select,.form textarea{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #cbd2d9;border-radius:6px;font:inherit}
+.form small{display:block;font-weight:400;color:#67717e;margin-top:6px;line-height:1.4}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:10px;border-bottom:1px solid #e7eaee;font-size:14px}
+.muted{color:#68727e;font-size:14px}
+.notice{background:#f1f6fb;border-left:4px solid #1459a6;padding:12px 14px;margin:16px 0}
+.status{font-weight:700;text-transform:uppercase;font-size:12px}
+.status.completed{color:#087f46}.status.failed{color:#b42318}.status.running{color:#1459a6}.status.queued{color:#7a5a00}
+.progress{height:16px;background:#e9edf2;border-radius:8px;overflow:hidden}
+.progress>div{height:100%;background:#1459a6}
+.log{background:#0b1020;color:#d7e0ed;padding:18px;border-radius:8px;overflow:auto;max-height:68vh;white-space:pre-wrap}
+.map-wrap{overflow:auto;background:#fafafa;border:1px solid #e3e6ea;padding:10px}
+.map-wrap img{max-width:100%;height:auto;display:block;margin:auto}
+code{font-family:Consolas,monospace}
+@media(max-width:800px){.grid.two{grid-template-columns:1fr}.topbar{height:auto;padding:14px;align-items:flex-start;gap:12px}.topbar,nav{flex-direction:column}nav{gap:8px}.container{padding:20px 14px}}

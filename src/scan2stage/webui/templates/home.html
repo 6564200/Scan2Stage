@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Scan2Stage — локальная работа{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Scan2Stage</h1>
+  <p>Локальная обработка 3D-сканов стрелковой галереи на Windows 10.</p>
+  <div class="actions">
+    <a class="button primary" href="/upload">Загрузить материалы</a>
+    <a class="button" href="/runs">Последние запуски</a>
+  </div>
+</section>
+
+<div class="grid two">
+  <section class="card">
+    <h2>Краткая инструкция</h2>
+    <ol>
+      <li>Создайте галерею и загрузите один или несколько сканов.</li>
+      <li>Откройте галерею и выберите сканы для обработки.</li>
+      <li>Запустите обработку. Страница статуса обновляется автоматически.</li>
+      <li>После завершения откройте результат: PNG-карта, JSON/NPZ/PLY и, когда включён финальный exporter, GLB/FBX.</li>
+      <li>Для диагностики используйте страницу логов.</li>
+    </ol>
+  </section>
+  <section class="card">
+    <h2>Локальное хранилище</h2>
+    <p><code>{{ data_root }}</code></p>
+    <p>Галерей: <strong>{{ gallery_count }}</strong><br>Запусков: <strong>{{ run_count }}</strong></p>
+    <p class="muted">Исходные сканы не перезаписываются. Каждый запуск получает отдельный Run ID и собственный каталог результатов.</p>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Текущая модель данных</h2>
+  <p><strong>Gallery</strong> → несколько <strong>Scan</strong> → несколько <strong>Run</strong> → набор <strong>Artifact</strong>.</p>
+  <p class="muted">Multi-scan хранение уже поддерживается. Геометрическое совмещение нескольких сканов в одну сцену будет отдельным этапом pipeline.</p>
+</section>
+{% endblock %}

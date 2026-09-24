@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Результат {{ run.id }} — Scan2Stage{% endblock %}
+{% block content %}
+<h1>Результат Run {{ run.id }}</h1>
+{% for scan_id, artifacts in grouped.items() %}
+<section class="card">
+  <h2>{% if scan_id in scans %}{{ scans[scan_id].original_name }}{% else %}Run artifacts{% endif %}</h2>
+
+  {% for a in artifacts %}
+    {% if a.kind == "map_png" %}
+      <div class="map-wrap"><img src="/artifact/{{ a.id }}" alt="Semantic map"></div>
+    {% endif %}
+  {% endfor %}
+
+  <div class="downloads">
+  {% for a in artifacts %}
+    <a class="button small" href="/artifact/{{ a.id }}?download=1">{{ a.kind }}</a>
+  {% endfor %}
+  </div>
+
+  {% set has_glb = artifacts|selectattr("kind","equalto","result_glb")|list|length %}
+  {% set has_fbx = artifacts|selectattr("kind","equalto","result_fbx")|list|length %}
+  {% if not has_glb or not has_fbx %}
+  <p class="muted">Финальный clean-scene GLB/FBX exporter ещё не реализован в текущем milestone. Интерфейс подхватит эти файлы автоматически, когда exporter начнёт их создавать.</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

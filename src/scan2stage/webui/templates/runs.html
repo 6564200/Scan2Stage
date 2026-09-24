@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Запуски — Scan2Stage{% endblock %}
+{% block content %}
+<h1>Ход выполнения</h1>
+<section class="card">
+{% if runs %}
+<table>
+  <thead><tr><th>Run</th><th>Галерея</th><th>Статус</th><th>Прогресс</th><th>Создан</th><th></th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+  <tr>
+    <td><code>{{ r.id }}</code></td>
+    <td>{{ r.gallery_name }}</td>
+    <td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+    <td>{{ r.progress }}%</td>
+    <td>{{ r.created_at }}</td>
+    <td><a href="/run/{{ r.id }}">Открыть</a></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Запусков ещё нет.</p>
+{% endif %}
+</section>
+{% endblock %}

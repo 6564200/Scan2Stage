@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Scan2Stage{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><a href="/">Scan2Stage</a></div>
+  <nav>
+    <a href="/">Инструкция</a>
+    <a href="/upload">Загрузка</a>
+    <a href="/runs">Ход выполнения</a>
+    <a href="/settings">Настройки</a>
+  </nav>
+</header>
+<main class="container">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

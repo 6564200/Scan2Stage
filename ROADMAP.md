@@ -1,105 +1,105 @@
 # Scan2Stage roadmap
 
-The immediate product goal is reliable reconstruction of a practical-shooting stage from a textured mobile scan. Recognition is structural-first: recover the stage layout, then classify targets and props in context.
+## Current milestone — local workstation application
 
-## Implemented foundation
+Implemented / being established on main:
 
-### M1 — Import and preprocessing
-- PLY loading and validation.
-- UGScan ZIP / GLB / glTF ingestion.
-- Legacy FBX / OBJ path.
-- Texture-aware surface sampling.
-- Voxel/outlier/normal preprocessing for point-cloud input.
+- Windows 10 + Python venv workflow;
+- local FastAPI web UI;
+- SQLite Gallery / Scan / Run / Artifact metadata;
+- immutable source scan storage;
+- multiple scans per Gallery;
+- background worker process with progress and logs;
+- settings snapshots per Run;
+- semantic PNG result and downloadable diagnostic artifacts;
+- structural-first detector v2.3.
 
-### M2 — Coordinate normalization
-- Source-axis conversion to canonical Z-up.
-- Unit conversion to meters.
-- Floor detection and floor-relative heights.
-- Source-to-room transform reporting.
+Colab/notebook orchestration is retired.
 
-### M3 — Room reconstruction
-- Wall-plane candidates.
-- Rectangular room footprint.
-- Conservative structural handling.
-- Internal planar structures are not automatically discarded.
+## M1 — Local application hardening
 
-### M4 — Candidate extraction
-- Existing DBSCAN/PCA candidates remain available.
-- Conservative unknown-first policy.
-- Thin/planar geometry retained for later semantic analysis.
+- enforce configured parallel-run limit;
+- cancel/retry controls;
+- disk-space and environment diagnostics;
+- safe deletion/archive of Runs and Galleries;
+- checksums for source scans;
+- stage timings and resource metrics;
+- transactional run output publication.
 
-### M4.5 — Structural-first detector (current)
-- Multi-height XY top-view at configurable resolution.
-- Density/min/max/height-range layers.
-- Structural connected components and footprint descriptors.
-- Fault Line proposals from red, low, elongated floor evidence.
-- Shooting-direction prior from long room axis plus rear tall support.
-- Generic IPSC Metric Target local-patch scoring.
-- Partial target observations allowed.
-- B/S subtype deliberately deferred until generic detection.
-- Rear-zone metal target proposals.
-- Structural evidence is never destructively removed before target analysis.
+## M2 — Structural detector v2.4
 
-## Next: v2.4 structural semantics
-
-1. Wall protrusion / wheel-cover profiles:
-   - detect protrusions as depth changes of a parent wall, not independent connected components;
-   - use measured height to reject them as target candidates;
-   - preserve gaps between protrusions as target-valid zones.
-
-2. Bullet-trap recognition:
-   - encode the three known trap size variants once dimensions are measured;
-   - recover front plane, local frame and working side;
-   - classify rear trap vs intermediate traps.
-
-3. Metric Target verification:
-   - refine local plane extraction;
-   - compare projected partial silhouette against clean target template;
-   - use support/stand evidence;
-   - classify IPSC Metric Target B vs S from installation height/context.
-
-4. Metal branch:
-   - distinguish Popper / Mini Popper / Plates;
-   - combine rear proximity, silhouette, height, orientation and blue texture;
-   - exploit repeated plate layouts.
-
-5. Fault Lines:
-   - reconstruct connected polylines, not only isolated components;
-   - derive shooting-area polygons when topology is sufficient.
-
-## M5 — Semantic scene graph and confidence
-- Typed scene objects and relationships.
-- support/context links.
-- Per-evidence confidence: geometry, top-view, orientation, color, context.
-- CONFIRMED / LIKELY / UNRESOLVED review states.
-- Preserve unresolved hypotheses instead of deleting them.
+- wall protrusion / wheel-cover depth profiles;
+- bullet-trap recognition for three measured variants;
+- stronger local Metric plane/template verifier;
+- Metric B/S classification from installation height/context;
+- Popper vs Mini Popper vs Plates;
+- Fault Line polyline reconstruction;
+- improved semantic map symbols and confidence display.
 
 Initial validation targets:
-- Metric Target recall > 90%.
+
+- Metric Target proposal recall > 90%;
 - Popper/metal recall > 95%.
-- Precision reported separately; recall has priority during proposal generation.
 
-## M6 — Review and validation
-- Versioned scene_config.json.
-- Top-view/debug preview with all hypotheses.
-- Manual correction workflow.
-- Regression fixtures from real failure cases.
-- Hard-negative library: decor, wall protrusions, partial structures, blue non-targets.
+## M3 — Multi-scan registration and evidence fusion
 
-## M7 — Asset replacement and Blender
-- Clean asset registry.
-- Deterministic placement from scene graph.
-- Headless Blender generation.
-- Preserve measured pose while replacing noisy scanned geometry.
+- keep every source scan immutable;
+- detect whether captures share coordinates;
+- coarse room/structure alignment;
+- transform review;
+- registration refinement;
+- per-scan provenance/confidence;
+- fuse semantic evidence rather than blindly concatenate meshes;
+- choose a canonical Gallery coordinate frame.
 
-## M8 — Performance
-- Coarse 4–5 cm structural pass.
-- Fine 1–2 cm local refinement only in candidate zones.
-- Spatial tiling.
-- Parallel local candidate verification.
-- Independent Fault Line / structure / texture branches.
-- GPU acceleration only where it materially helps image/ML stages.
+## M4 — Manual review UI
 
-## M9 — Hybrid ML only if metrics require it
-- 2D RGB detector plus 3D association before learned 3D detection.
-- Learned models only after the labeled dataset is large enough to measure generalization and hard negatives.
+- click/select objects on semantic top-view;
+- change class;
+- move/rotate/delete/add object;
+- confirm/reject target hypotheses;
+- edit Fault Lines;
+- save corrections as a versioned review layer;
+- compare automatic vs corrected scene.
+
+## M5 — Scene graph and clean asset library
+
+- typed scene schema;
+- support/context relations;
+- clean asset registry with anchor/front/up metadata;
+- asset-library manager;
+- measured bullet-trap variants;
+- confirmed object replacement.
+
+## M6 — Blender / GLB / FBX generation
+
+- configure blender.exe;
+- deterministic clean-scene build;
+- output result.glb;
+- output result.fbx;
+- optional .blend working scene;
+- preserve Gallery coordinate frame;
+- expose outputs in web Results page.
+
+## M7 — Performance
+
+- coarse 4–5 cm whole-scene pass;
+- 1–2 cm refinement only in ROIs;
+- spatial tiling;
+- parallel local candidate verification;
+- reusable intermediate cache keyed by source checksum + settings;
+- profile CPU/RAM/I/O before adding GPU code.
+
+## M8 — Dataset and regression system
+
+- confirmed corrections become labeled examples;
+- hard-negative library;
+- representative large-scene benchmark;
+- run-to-run metrics;
+- regression dashboard.
+
+## M9 — ML only where measured benefit exists
+
+- RGB-assisted 2D detection + 3D association;
+- segmentation where texture materially improves recall;
+- learned 3D detection only after the labeled dataset is sufficient.

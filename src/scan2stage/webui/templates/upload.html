@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Загрузка — Scan2Stage{% endblock %}
+{% block content %}
+<h1>Загрузка материала</h1>
+<form class="card form" method="post" enctype="multipart/form-data">
+  <label>Добавить в существующую галерею
+    <select name="gallery_id">
+      <option value="">Создать новую</option>
+      {% for g in galleries %}
+      <option value="{{ g.id }}">{{ g.name }} ({{ g.id }})</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label>Название новой галереи
+    <input type="text" name="gallery_name" placeholder="Например: Галерея 3 / упражнение 25.09">
+  </label>
+
+  <label>Комментарий
+    <textarea name="notes" rows="3" placeholder="Опционально"></textarea>
+  </label>
+
+  <label>Сканы
+    <input type="file" name="files" multiple required accept=".glb,.gltf,.zip,.fbx,.obj,.ply">
+  </label>
+  <p class="muted">Можно выбрать несколько файлов одной галереи за один раз.</p>
+
+  <button class="button primary" type="submit">Сохранить сканы</button>
+</form>
+{% endblock %}

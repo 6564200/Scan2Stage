@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Логи {{ run.id }} — Scan2Stage{% endblock %}
+{% block head %}
+{% if run.status in ["queued", "running"] %}
+<meta http-equiv="refresh" content="3">
+{% endif %}
+{% endblock %}
+{% block content %}
+<h1>Логи Run {{ run.id }}</h1>
+<pre class="log">{{ log_text }}</pre>
+<a class="button" href="/run/{{ run.id }}">Назад к запуску</a>
+{% endblock %}

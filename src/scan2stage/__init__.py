@@ -1,3 +1,3 @@
-"""Scan2Stage textured 3D scan to stage processing pipeline."""
+"""Scan2Stage local textured 3D scan to stage processing pipeline."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

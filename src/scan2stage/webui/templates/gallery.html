@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ gallery.name }} — Scan2Stage{% endblock %}
+{% block content %}
+<h1>{{ gallery.name }}</h1>
+<p>{{ gallery.notes }}</p>
+<p class="muted">Gallery ID: {{ gallery.id }}</p>
+
+<section class="card">
+  <h2>Сканы</h2>
+  {% if scans %}
+  <form method="post" action="/gallery/{{ gallery.id }}/run">
+    <table>
+      <thead><tr><th></th><th>Файл</th><th>Размер</th><th>Добавлен</th></tr></thead>
+      <tbody>
+      {% for s in scans %}
+      <tr>
+        <td><input type="checkbox" name="scan_id" value="{{ s.id }}" checked></td>
+        <td>{{ s.original_name }}</td>
+        <td>{{ "%.1f"|format(s.size_bytes / 1024 / 1024) }} MB</td>
+        <td>{{ s.created_at }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="notice">
+      Будут использованы текущие настройки: {{ settings.sample_count }} samples, top-view {{ settings.topview_resolution_m }} м, source-up {{ settings.source_up }}.
+    </div>
+    <button class="button primary" type="submit">Запустить выбранные сканы</button>
+  </form>
+  {% else %}
+    <p>В этой галерее пока нет сканов.</p>
+  {% endif %}
+</section>
+
+<a class="button" href="/upload">Добавить ещё сканы</a>
+{% endblock %}

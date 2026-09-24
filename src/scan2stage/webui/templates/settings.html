@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Настройки — Scan2Stage{% endblock %}
+{% block content %}
+<h1>Настройки</h1>
+<p class="muted">Локальные данные: <code>{{ data_root }}</code></p>
+<form class="card form" method="post">
+  <label>Sample count
+    <input type="number" name="sample_count" min="50000" max="2000000" step="50000" value="{{ settings.sample_count }}">
+    <small>{{ descriptions.sample_count }}</small>
+  </label>
+
+  <label>Source up
+    <select name="source_up">
+      {% for v in ["x","y","z"] %}<option value="{{ v }}" {% if settings.source_up == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+    <small>{{ descriptions.source_up }}</small>
+  </label>
+
+  <label>Unit scale
+    <input type="text" name="unit_scale" value="{{ settings.unit_scale if settings.unit_scale is not none else '' }}" placeholder="авто">
+    <small>{{ descriptions.unit_scale }}</small>
+  </label>
+
+  <label>Top-view resolution, m
+    <input type="number" name="topview_resolution_m" min="0.01" max="0.20" step="0.01" value="{{ settings.topview_resolution_m }}">
+    <small>{{ descriptions.topview_resolution_m }}</small>
+  </label>
+
+  <label>Blender executable
+    <input type="text" name="blender_executable" value="{{ settings.blender_executable }}" placeholder="C:\Program Files\Blender Foundation\Blender 4.5\blender.exe">
+    <small>{{ descriptions.blender_executable }}</small>
+  </label>
+
+  <label>Max parallel runs
+    <input type="number" name="max_parallel_runs" min="1" max="8" value="{{ settings.max_parallel_runs }}">
+    <small>{{ descriptions.max_parallel_runs }}</small>
+  </label>
+
+  <button class="button primary" type="submit">Сохранить</button>
+</form>
+{% endblock %}

@@ -1,126 +1,99 @@
 # Scan2Stage engineering plan
 
-This plan reflects the structural-first prototype now present on main.
-
-## Current processing baseline
+## Current baseline
 
 ~~~text
-UGScan ZIP/GLB
- -> sampled colored point cloud
- -> meters / Z-up
- -> floor + rectangular room
- -> legacy conservative object candidates
- -> multi-height top-view
- -> structural components + Fault Lines
- -> shooting-direction prior
- -> Metric/metal soft hypotheses
- -> JSON/NPZ diagnostics
+local web UI
+ -> Gallery / Scan storage
+ -> Run + settings snapshot
+ -> worker process
+ -> textured mesh sampling
+ -> room normalization
+ -> structural-first detector
+ -> semantic PNG + diagnostics
 ~~~
 
-The central policy is explicit: structural understanding must not destroy target evidence.
+The current engineering priority is reliability and reproducibility on a Windows workstation.
 
-## P0 — correctness before classifier sophistication
+## P0 — local application correctness
 
-### 1. Full floor rotation
+### Job lifecycle
 
-The current room path translates detected floor height but still needs a complete rotation that maps the fitted floor normal to +Z.
+- enforce max parallel runs;
+- add cancel/retry;
+- detect stale/crashed workers;
+- keep append-only logs;
+- record per-stage timings.
 
-Acceptance:
-- synthetic tilted rooms normalize floor normal within 1 degree;
-- source-to-room transform includes rotation plus translation;
-- colors and normals survive.
+### Storage safety
 
-### 2. Wall protrusion depth profiles
+- SHA-256 every source scan;
+- never overwrite sources;
+- atomic artifact publication;
+- archive/delete UI with confirmation;
+- free-disk guard before a run.
 
-Implement wall-local depth profiles for wheel-cover boxes. Component segmentation alone is insufficient because protrusions merge with walls.
+### Environment diagnostics
 
-Acceptance:
-- low attached bumps are classified as wall_protrusion;
-- height is reported;
-- only bump footprint is excluded from target hypotheses;
-- gaps between bumps remain searchable.
+Expose Python, Open3D, Blender, CPU, RAM and disk status in the UI.
 
-### 3. Local Metric plane/silhouette verifier
+## P0 — geometry correctness
 
-The current local scorer is deliberately permissive. Add explicit plane RANSAC and partial template projection using the clean 0.414 x 0.535 m target face.
+### Floor rotation
 
-Acceptance:
-- partially occluded target remains detectable with at least 35-45% visible face;
-- wall/decor patches with wrong orientation are rejected;
-- B/S classification is performed only after generic target detection.
+Map the fitted floor normal to +Z, not only its offset.
 
-### 4. Bullet-trap variants
+### Wall protrusions
 
-Measure and encode all three trap variants. Recover front plane/local frame and identify the rear trap.
+Detect wheel-cover boxes as local wall depth-profile bumps and keep gaps available for targets.
 
-Acceptance:
-- each measured variant recognized on validation scans;
-- metal search ROI generated from rear trap front;
-- trap-facing direction agrees with stage shooting direction.
+### Local Metric verifier
 
-## P1 — Fault Lines and stage topology
+Add explicit plane fitting and partial template projection. Generic Metric detection precedes B/S subtype.
 
-Upgrade red floor components to linked polylines and, where possible, a shooting-area polygon.
+### Bullet traps
 
-Acceptance:
-- red features above the floor band are rejected;
-- disconnected noise is not promoted;
-- line segments preserve corners and topology.
+Measure all three variants and recover front plane/local frame.
 
-## P1 — target subtypes
+## P1 — multi-scan
 
-Metal:
-- Popper vs Mini Popper;
-- Plates / Plates quad;
-- combine rear proximity, height, silhouette, orientation and blue color.
+1. source checksums and metadata;
+2. detect shared coordinate frames;
+3. structure-based coarse alignment;
+4. alignment review UI;
+5. refinement;
+6. semantic evidence fusion;
+7. canonical Gallery frame.
 
-Cardboard:
-- generic IPSC Metric Target first;
-- B/S via installation height and context.
+Do not merge geometry before transforms are validated.
 
-## P1 — ingestion/reproducibility work retained from the earlier audit
+## P1 — manual review
 
-- bounded/streamed ZIP resolver;
-- choose default units after inner mesh format is resolved;
-- allocate surface samples by triangle area, not triangle count;
-- transactional outputs;
-- deterministic seeds/parameters in run manifest;
-- explicit room-fit quality gates.
+Automatic detector output and human corrections must be separate layers. A confirmed correction should be reusable as validation/training data without destroying original evidence.
 
-## P2 — semantic contracts
+## P2 — clean scene export
 
-Replace untyped scene object dictionaries with typed Pydantic models for transform, evidence scores, confidence/review state, support/context links, polylines and object variants.
+- typed scene graph;
+- clean asset registry;
+- deterministic Blender build;
+- result.glb and result.fbx;
+- optional .blend;
+- expose all final artifacts through Results page.
 
-Add validation for config/object_catalog.json including unique IDs and reference integrity.
+## P2 — performance
 
-## P2 — validation dataset
+- coarse 4–5 cm whole scene;
+- fine 1–2 cm ROIs;
+- spatial tiling;
+- parallel local candidate verification;
+- cache by source hash + settings;
+- CPU/RAM profiling first.
 
-Before learned detection:
-- label representative large maps;
-- record all real targets, including occluded targets;
-- record hard negatives: decor, wall protrusions, wall ends and blue non-targets;
-- measure proposal recall and final precision separately.
+## Metrics
 
-Initial goals:
-- Metric Target recall > 90%;
+Initial labeled-set goals:
+
+- Metric Target proposal recall > 90%;
 - Popper/metal recall > 95%.
 
-## P3 — performance
-
-Keep the coarse-to-fine strategy:
-- 4-5 cm top-view structural pass;
-- 1-2 cm refinement only around hypotheses;
-- spatial tiling;
-- parallel local-patch verification;
-- independent Fault Line, texture and structural branches.
-
-CPU/RAM are the current priority. GPU acceleration is reserved for image segmentation/detection or learned models where profiling shows a benefit.
-
-## P4 — clean assets and Blender
-
-Once semantic outputs are stable:
-- asset registry with anchor/front/up metadata;
-- deterministic asset replacement;
-- preview GLB/top-view;
-- headless Blender scene generator;
-- correction UI as a client of the same scene schema.
+Precision is evaluated separately after proposal generation.
