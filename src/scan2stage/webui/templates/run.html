@@ -30,7 +30,12 @@
   {% if run.status == "completed" %}
   <a class="button primary" href="/results/{{ run.id }}">Результаты</a>
   {% endif %}
-  {% if run.status not in ["queued", "running"] %}
+  {% if run.status in ["queued", "running"] %}
+  <form class="inline-form" method="post" action="/run/{{ run.id }}/mark-failed"
+        onsubmit="return confirm('Пометить этот Run как failed? Используйте это только если worker уже завершился или упал, а статус завис.');">
+    <button class="button danger" type="submit">Снять зависание</button>
+  </form>
+  {% else %}
   <form class="inline-form" method="post" action="/run/{{ run.id }}/delete"
         onsubmit="return confirm('Удалить этот Run вместе со всеми результатами и логом?');">
     <button class="button danger" type="submit">Удалить результаты</button>

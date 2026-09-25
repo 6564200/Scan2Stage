@@ -85,3 +85,20 @@ def test_delete_scan_upload_rejects_active_run(tmp_path: Path):
     import pytest
     with pytest.raises(RuntimeError):
         store.delete_scan_upload(gid, sid)
+
+
+def test_mark_run_failed_releases_stuck_run(tmp_path: Path):
+    store = Store(tmp_path / "runtime")
+    gid = store.create_gallery("Gallery A")
+    source = tmp_path / "scan.glb"
+    source.write_bytes(b"dummy")
+    sid = store.add_scan(gid, source)
+    cfg = LocalSettings()
+    rid = store.create_run(gid, [sid], cfg.model_dump_json())
+
+    assert store.run(rid)["status"] == "queued"
+    store.mark_run_failed(rid, "stale worker")
+    run = store.run(rid)
+    assert run["status"] == "failed"
+    assert run["message"] == "stale worker"
+    assert run["finished_at"] is not None

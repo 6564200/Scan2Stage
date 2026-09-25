@@ -52,7 +52,7 @@ def launch_run(s: Store, gallery_id: str, scan_ids: list[str]) -> str:
     log_handle = s.log_path(rid).open("a", encoding="utf-8")
     creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     subprocess.Popen(
-        [sys.executable, "-m", "scan2stage.worker", rid],
+        [sys.executable, "-m", "scan2stage.worker_supervisor", rid],
         stdout=log_handle,
         stderr=subprocess.STDOUT,
         cwd=str(PACKAGE_DIR.parent.parent),
@@ -180,6 +180,19 @@ def delete_run(run_id: str):
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     return RedirectResponse("/runs", status_code=303)
+
+
+@app.post("/run/{run_id}/mark-failed")
+def mark_run_failed(run_id: str):
+    s = store()
+    run = s.run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    try:
+        s.mark_run_failed(run_id, "Run снят как зависший вручную")
+    except KeyError:
+        raise HTTPException(404, "Run not found")
+    return RedirectResponse(f"/run/{run_id}", status_code=303)
 
 
 @app.get("/runs")

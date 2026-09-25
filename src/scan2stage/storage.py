@@ -244,6 +244,19 @@ class Store:
                 (utcnow(), scan_id, gallery_id),
             )
 
+    def mark_run_failed(self, run_id: str, message: str = "Run остановлен вручную") -> None:
+        run = self.run(run_id)
+        if not run:
+            raise KeyError("Run not found")
+        if run["status"] not in {"queued", "running"}:
+            return
+        self.update_run(
+            run_id,
+            status="failed",
+            message=message,
+            finished_at=utcnow(),
+        )
+
     def delete_run(self, run_id: str) -> None:
         run = self.run(run_id)
         if not run:

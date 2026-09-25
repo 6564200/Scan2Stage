@@ -17,7 +17,12 @@
     <td>
       <div class="row-actions">
         <a href="/run/{{ r.id }}">Открыть</a>
-        {% if r.status not in ["queued", "running"] %}
+        {% if r.status in ["queued", "running"] %}
+        <form class="inline-form" method="post" action="/run/{{ r.id }}/mark-failed"
+              onsubmit="return confirm('Пометить Run {{ r.id }} как failed?');">
+          <button class="link-button danger-text" type="submit">Снять зависание</button>
+        </form>
+        {% else %}
         <form class="inline-form" method="post" action="/run/{{ r.id }}/delete"
               onsubmit="return confirm('Удалить Run {{ r.id }} вместе со всеми результатами и логом?');">
           <button class="link-button danger-text" type="submit">Удалить результаты</button>
