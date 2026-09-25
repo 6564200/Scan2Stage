@@ -81,6 +81,9 @@ class Store:
                 created_at TEXT NOT NULL
             );
             """)
+            columns = {row["name"] for row in con.execute("PRAGMA table_info(scans)")}
+            if "deleted_at" not in columns:
+                con.execute("ALTER TABLE scans ADD COLUMN deleted_at TEXT")
 
     def create_gallery(self, name: str, notes: str = "") -> str:
         gid = uuid.uuid4().hex[:12]
@@ -104,12 +107,29 @@ class Store:
         shutil.copy2(source, target)
         with self.connect() as con:
             con.execute(
-                "INSERT INTO scans(id,gallery_id,original_name,stored_path,size_bytes,created_at) VALUES(?,?,?,?,?,?)",
+                """INSERT INTO scans(
+                       id,gallery_id,original_name,stored_path,size_bytes,created_at,deleted_at
+                   ) VALUES(?,?,?,?,?,?,NULL)""",
                 (sid, gallery_id, name, str(target), target.stat().st_size, utcnow()),
             )
         return sid
 
     def create_run(self, gallery_id: str, scan_ids: list[str], settings_json: str) -> str:
+        if not scan_ids:
+            raise ValueError("At least one scan is required")
+        placeholders = ",".join("?" for _ in scan_ids)
+        with self.connect() as con:
+            rows = con.execute(
+                f"""SELECT id FROM scans
+                    WHERE gallery_id=? AND deleted_at IS NULL
+                      AND id IN ({placeholders})""",
+                [gallery_id, *scan_ids],
+            ).fetchall()
+            valid = {row["id"] for row in rows}
+        missing = [sid for sid in scan_ids if sid not in valid]
+        if missing:
+            raise ValueError(f"Unavailable scan(s): {', '.join(missing)}")
+
         rid = uuid.uuid4().hex[:12]
         with self.connect() as con:
             con.execute(
@@ -156,8 +176,16 @@ class Store:
     def galleries(self):
         return self.all("SELECT * FROM galleries ORDER BY created_at DESC")
 
+    def scan(self, scan_id: str):
+        return self.one("SELECT * FROM scans WHERE id=?", (scan_id,))
+
     def scans(self, gallery_id: str):
-        return self.all("SELECT * FROM scans WHERE gallery_id=? ORDER BY created_at DESC", (gallery_id,))
+        return self.all(
+            """SELECT * FROM scans
+               WHERE gallery_id=? AND deleted_at IS NULL
+               ORDER BY created_at DESC""",
+            (gallery_id,),
+        )
 
     def run(self, run_id: str):
         return self.one("SELECT * FROM runs WHERE id=?", (run_id,))
@@ -183,6 +211,55 @@ class Store:
     def active_run_count(self) -> int:
         row = self.one("SELECT COUNT(*) AS n FROM runs WHERE status IN ('queued','running')")
         return int(row["n"]) if row else 0
+
+    def scan_active_run_count(self, scan_id: str) -> int:
+        row = self.one(
+            """SELECT COUNT(*) AS n
+               FROM runs
+               JOIN run_scans ON run_scans.run_id=runs.id
+               WHERE run_scans.scan_id=? AND runs.status IN ('queued','running')""",
+            (scan_id,),
+        )
+        return int(row["n"]) if row else 0
+
+    def delete_scan_upload(self, gallery_id: str, scan_id: str) -> None:
+        scan = self.one(
+            """SELECT * FROM scans
+               WHERE id=? AND gallery_id=? AND deleted_at IS NULL""",
+            (scan_id, gallery_id),
+        )
+        if not scan:
+            raise KeyError("Scan not found")
+        if self.scan_active_run_count(scan_id):
+            raise RuntimeError("Scan is used by an active Run")
+
+        path = Path(scan["stored_path"])
+        scan_dir = path.parent
+        if scan_dir.exists():
+            shutil.rmtree(scan_dir)
+
+        with self.connect() as con:
+            con.execute(
+                "UPDATE scans SET deleted_at=? WHERE id=? AND gallery_id=?",
+                (utcnow(), scan_id, gallery_id),
+            )
+
+    def delete_run(self, run_id: str) -> None:
+        run = self.run(run_id)
+        if not run:
+            raise KeyError("Run not found")
+        if run["status"] in {"queued", "running"}:
+            raise RuntimeError("Active Run cannot be deleted")
+
+        run_dir = self.runs_dir / run_id
+        log_path = self.log_path(run_id)
+
+        with self.connect() as con:
+            con.execute("DELETE FROM runs WHERE id=?", (run_id,))
+
+        if run_dir.exists():
+            shutil.rmtree(run_dir)
+        log_path.unlink(missing_ok=True)
 
     def log_path(self, run_id: str) -> Path:
         return self.logs_dir / f"{run_id}.log"

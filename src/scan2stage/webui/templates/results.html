@@ -25,4 +25,12 @@
   {% endif %}
 </section>
 {% endfor %}
+
+<div class="actions">
+  <a class="button" href="/run/{{ run.id }}">К запуску</a>
+  <form class="inline-form" method="post" action="/run/{{ run.id }}/delete"
+        onsubmit="return confirm('Удалить Run {{ run.id }} вместе со всеми результатами и логом?');">
+    <button class="button danger" type="submit">Удалить результаты</button>
+  </form>
+</div>
 {% endblock %}

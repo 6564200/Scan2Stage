@@ -412,6 +412,85 @@ def estimate_shooting_direction(points: np.ndarray, rectangle: dict) -> dict:
     }
 
 
+def detect_rear_bullet_trap(
+    points: np.ndarray,
+    shooting: dict,
+    rear_band_m: float = 1.6,
+) -> dict | None:
+    """Detect a generic rear bullet-trap face before variant classification.
+
+    The three real trap sizes are not yet measured, so this stage only estimates
+    a rear support face: position, width, height and confidence. The hypothesis
+    then becomes the geometric reference for rear-zone semantics.
+    """
+    pts = np.asarray(points, dtype=float)
+    if len(pts) < 50:
+        return None
+
+    direction = np.asarray(shooting["direction_xy"], dtype=float)
+    direction /= max(np.linalg.norm(direction), 1e-9)
+    side = np.array([-direction[1], direction[0]], dtype=float)
+
+    along = pts[:, :2] @ direction
+    across = pts[:, :2] @ side
+    rear_edge = float(np.quantile(along, 0.99))
+
+    tall = (
+        (along >= rear_edge - rear_band_m)
+        & (pts[:, 2] >= 0.35)
+        & (pts[:, 2] <= 2.40)
+    )
+    if int(tall.sum()) < 40:
+        return None
+
+    a = along[tall]
+    bin_size = 0.08
+    lo = rear_edge - rear_band_m
+    bins = np.floor((a - lo) / bin_size).astype(int)
+    unique, counts = np.unique(bins, return_counts=True)
+    best_bin = int(unique[int(np.argmax(counts))])
+    front_projection = lo + (best_bin + 0.5) * bin_size
+
+    face_mask = tall & (np.abs(along - front_projection) <= 0.12)
+    face = pts[face_mask]
+    if len(face) < 20:
+        return None
+
+    face_across = face[:, :2] @ side
+    s0, s1 = np.quantile(face_across, [0.02, 0.98])
+    z0, z1 = np.quantile(face[:, 2], [0.02, 0.98])
+    width = float(s1 - s0)
+    height = float(z1 - z0)
+    if width < 1.0 or height < 0.65:
+        return None
+
+    center_side = float((s0 + s1) * 0.5)
+    center_xy = direction * front_projection + side * center_side
+    p0 = direction * front_projection + side * float(s0)
+    p1 = direction * front_projection + side * float(s1)
+
+    support_score = min(1.0, len(face) / 500.0)
+    width_score = min(1.0, width / 2.5)
+    height_score = min(1.0, height / 1.5)
+    confidence = 0.35 + 0.25 * support_score + 0.20 * width_score + 0.20 * height_score
+
+    return {
+        "id": "rear_bullet_trap_000",
+        "class_id": "bullet_trap",
+        "variant_id": None,
+        "center_xy_m": center_xy.tolist(),
+        "front_segment_xy_m": [p0.tolist(), p1.tolist()],
+        "front_projection_m": float(front_projection),
+        "rear_edge_projection_m": rear_edge,
+        "width_m": width,
+        "height_m": height,
+        "height_min_m": float(z0),
+        "height_max_m": float(z1),
+        "confidence": float(min(0.95, confidence)),
+        "classification_state": "generic_unmeasured_variant",
+    }
+
+
 def _local_patch(points: np.ndarray, center_xy: np.ndarray, radius_m: float) -> np.ndarray:
     d = points[:, :2] - center_xy
     return points[np.einsum("ij,ij->i", d, d) <= radius_m * radius_m]
@@ -593,6 +672,7 @@ def analyze_structural_scene(
     structures = detect_structural_components(topview)
     fault_lines = detect_fault_lines(topview)
     shooting = estimate_shooting_direction(points, room_report["rectangle"])
+    bullet_trap = detect_rear_bullet_trap(points, shooting)
     metric = generate_target_proposals(points, topview, np.asarray(shooting["direction_xy"]))
     metal = detect_rear_metal_proposals(points, room_report["rectangle"], shooting)
     structures = apply_rear_zone_semantics(structures, points, shooting, metal)
@@ -608,7 +688,7 @@ def analyze_structural_scene(
     )
 
     report = {
-        "schema_version": "0.9",
+        "schema_version": "1.0",
         "method": "structural-first multi-height top-view + local 3D verification",
         "coordinate_system": {"units": "meters", "up": "z", "top_view_plane": "xy"},
         "policy": {
@@ -628,11 +708,13 @@ def analyze_structural_scene(
             "artifact": str(npz_path),
         },
         "shooting_direction": shooting,
+        "rear_bullet_trap": bullet_trap,
         "structural_components": structures,
         "fault_lines": fault_lines,
         "metric_target_proposals": metric,
         "rear_metal_proposals": metal,
         "counts": {
+            "rear_bullet_trap": 1 if bullet_trap else 0,
             "structural_components": len(structures),
             "fault_lines": len(fault_lines),
             "metric_target_proposals": len(metric),

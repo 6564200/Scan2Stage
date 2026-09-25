@@ -156,6 +156,32 @@ def rerun_scan(gallery_id: str, scan_id: str):
     return RedirectResponse(f"/run/{rid}", status_code=303)
 
 
+@app.post("/gallery/{gallery_id}/scan/{scan_id}/delete")
+def delete_scan(gallery_id: str, scan_id: str):
+    """Delete uploaded source bytes while preserving historical Run metadata."""
+    s = store()
+    try:
+        s.delete_scan_upload(gallery_id, scan_id)
+    except KeyError:
+        raise HTTPException(404, "Scan not found")
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    return RedirectResponse(f"/gallery/{gallery_id}", status_code=303)
+
+
+@app.post("/run/{run_id}/delete")
+def delete_run(run_id: str):
+    s = store()
+    run = s.run(run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    try:
+        s.delete_run(run_id)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    return RedirectResponse("/runs", status_code=303)
+
+
 @app.get("/runs")
 def runs_page(request: Request):
     return render(request, "runs.html", {

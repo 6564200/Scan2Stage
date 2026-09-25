@@ -36,3 +36,10 @@ th,td{text-align:left;padding:10px;border-bottom:1px solid #e7eaee;font-size:14p
 .map-wrap img{max-width:100%;height:auto;display:block;margin:auto}
 code{font-family:Consolas,monospace}
 @media(max-width:800px){.grid.two{grid-template-columns:1fr}.topbar{height:auto;padding:14px;align-items:flex-start;gap:12px}.topbar,nav{flex-direction:column}nav{gap:8px}.container{padding:20px 14px}}
+
+.row-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.inline-form{display:inline}
+.button.danger{border-color:#d92d20;color:#b42318;background:#fff}
+.button.danger:hover{background:#fff1f0}
+.link-button{border:0;background:none;padding:0;font:inherit;cursor:pointer}
+.danger-text{color:#b42318}

@@ -169,6 +169,31 @@ def render_semantic_topview(
         elif show_labels and cls == "rear_zone_structure":
             ax.text(center[0], center[1], "R?", fontsize=8, ha="center", va="center", color="slateblue")
 
+    # Rear bullet trap: draw the detected front face as the structural anchor
+    # for the popper/metal zone.
+    trap = scene.get("rear_bullet_trap")
+    if trap and trap.get("front_segment_xy_m"):
+        p0, p1 = trap["front_segment_xy_m"]
+        ax.plot(
+            [p0[0], p1[0]],
+            [p0[1], p1[1]],
+            linewidth=6.0,
+            color="olive",
+            alpha=0.9,
+            solid_capstyle="butt",
+        )
+        if show_labels:
+            ctrap = np.asarray(trap["center_xy_m"], dtype=float)
+            ax.text(
+                ctrap[0],
+                ctrap[1],
+                "BT",
+                fontsize=9,
+                ha="center",
+                va="bottom",
+                color="darkolivegreen",
+            )
+
     # Fault Lines.
     for obj in scene.get("fault_lines", []):
         a, b = _major_segment(obj["center_xy_m"], obj["axes_xy"], obj["extent_major_m"])
@@ -248,6 +273,7 @@ def render_semantic_topview(
     handles = [
         Line2D([0], [0], color="dimgray", lw=3, label="Wall / partition"),
         Line2D([0], [0], color="saddlebrown", lw=4, label="Large structure / trap candidate"),
+        Line2D([0], [0], color="olive", lw=6, label="Detected rear bullet trap"),
         Line2D([0], [0], color="steelblue", lw=3, label="Metal shield (rear/popper zone)"),
         Line2D([0], [0], color="darkorange", lw=2, label="Decor / compact structure"),
         Line2D([0], [0], color="red", lw=4, label="Fault Line"),

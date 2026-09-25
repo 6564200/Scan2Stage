@@ -21,7 +21,7 @@ Colab/notebook orchestration is retired.
 - enforce configured parallel-run limit;
 - cancel/retry controls;
 - disk-space and environment diagnostics;
-- safe deletion/archive of Runs and Galleries;
+- safe deletion of completed Runs/results and uploaded Scan source bytes;\n- archive/delete whole Galleries;
 - checksums for source scans;
 - stage timings and resource metrics;
 - transactional run output publication.
@@ -29,7 +29,7 @@ Colab/notebook orchestration is retired.
 ## M2 — Structural detector v2.4
 
 - wall protrusion / wheel-cover depth profiles;
-- bullet-trap recognition for three measured variants;
+- generic rear bullet-trap hypothesis (implemented baseline);\n- classify three measured bullet-trap variants once dimensions are available;
 - stronger local Metric plane/template verifier;
 - Metric B/S classification from installation height/context;
 - Popper vs Mini Popper vs Plates;

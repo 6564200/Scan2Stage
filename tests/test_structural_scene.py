@@ -5,6 +5,7 @@ from scan2stage.structural_scene import (
     build_topview_layers,
     detect_structural_components,
     detect_fault_lines,
+    detect_rear_bullet_trap,
     estimate_shooting_direction,
     metric_target_hypothesis,
 )
@@ -120,3 +121,25 @@ def test_rear_zone_partition_is_not_left_as_decorative_partition():
     out = apply_rear_zone_semantics(structures, points, shooting, metal)
     assert out[0]["class_id"] == "metal_shield"
     assert out[0]["context_zone"] == "rear/popper"
+
+
+def test_detect_rear_bullet_trap_finds_wide_tall_rear_face():
+    rng = np.random.default_rng(33)
+    floor = np.column_stack([
+        rng.uniform(-2.0, 2.0, 2500),
+        rng.uniform(-8.0, 8.0, 2500),
+        rng.uniform(0.0, 0.05, 2500),
+    ])
+    trap = np.column_stack([
+        rng.uniform(-1.8, 1.8, 1800),
+        rng.normal(7.55, 0.035, 1800),
+        rng.uniform(0.25, 2.0, 1800),
+    ])
+    pts = np.vstack([floor, trap])
+    shooting = {"direction_xy": [0.0, 1.0]}
+    result = detect_rear_bullet_trap(pts, shooting)
+    assert result is not None
+    assert result["class_id"] == "bullet_trap"
+    assert result["width_m"] > 3.0
+    assert result["height_m"] > 1.4
+    assert result["front_projection_m"] > 7.3

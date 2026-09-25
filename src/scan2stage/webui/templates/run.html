@@ -18,7 +18,9 @@
 <section class="card">
   <h2>Сканы</h2>
   <ul>
-  {% for s in scans %}<li>{{ s.original_name }}</li>{% endfor %}
+  {% for s in scans %}
+    <li>{{ s.original_name }}{% if s.deleted_at %} <span class="muted">(исходная загрузка удалена)</span>{% endif %}</li>
+  {% endfor %}
   </ul>
 </section>
 </div>
@@ -27,6 +29,12 @@
   <a class="button" href="/logs/{{ run.id }}">Логи</a>
   {% if run.status == "completed" %}
   <a class="button primary" href="/results/{{ run.id }}">Результаты</a>
+  {% endif %}
+  {% if run.status not in ["queued", "running"] %}
+  <form class="inline-form" method="post" action="/run/{{ run.id }}/delete"
+        onsubmit="return confirm('Удалить этот Run вместе со всеми результатами и логом?');">
+    <button class="button danger" type="submit">Удалить результаты</button>
+  </form>
   {% endif %}
 </div>
 {% endblock %}

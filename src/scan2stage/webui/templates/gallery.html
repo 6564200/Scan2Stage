@@ -27,13 +27,22 @@
         <td>{{ "%.1f"|format(s.size_bytes / 1024 / 1024) }} MB</td>
         <td>{{ s.created_at }}</td>
         <td>
-          <button
-            class="button small"
-            type="submit"
-            formaction="/gallery/{{ gallery.id }}/scan/{{ s.id }}/rerun"
-            formmethod="post"
-            title="Создать новый Run для этого уже загруженного скана с текущими настройками"
-          >Пересканировать</button>
+          <div class="row-actions">
+            <button
+              class="button small"
+              type="submit"
+              formaction="/gallery/{{ gallery.id }}/scan/{{ s.id }}/rerun"
+              formmethod="post"
+              title="Создать новый Run для этого уже загруженного скана с текущими настройками"
+            >Пересканировать</button>
+            <button
+              class="button small danger"
+              type="submit"
+              formaction="/gallery/{{ gallery.id }}/scan/{{ s.id }}/delete"
+              formmethod="post"
+              onclick="return confirm('Удалить загруженный файл {{ s.original_name }}? Старые Run и их результаты останутся, но этот Scan больше нельзя будет пересканировать.');"
+            >Удалить загрузку</button>
+          </div>
         </td>
       </tr>
       {% endfor %}
@@ -43,12 +52,12 @@
       Будут использованы текущие настройки: {{ settings.sample_count }} samples,
       top-view {{ settings.topview_resolution_m }} м,
       source-up {{ settings.source_up }}.
-      Кнопка «Пересканировать» не загружает файл повторно — она создаёт новый Run для выбранного Scan.
+      Кнопка «Пересканировать» создаёт новый Run без повторной загрузки файла.
     </div>
     <button class="button primary" type="submit">Запустить выбранные сканы</button>
   </form>
   {% else %}
-    <p>В этой галерее пока нет сканов.</p>
+    <p>В этой галерее пока нет активных загрузок.</p>
   {% endif %}
 </section>
 
